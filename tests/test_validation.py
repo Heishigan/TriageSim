@@ -1,4 +1,4 @@
-"""Input validation: bad form values, bad presets, damaged or duplicate files."""
+"""Input validation: bad form values, bad presets, damaged files."""
 import gzip
 
 import pytest
@@ -48,9 +48,9 @@ def test_preset_codes_with_dots_are_normalized(tmp_path):
     assert CohortSettings.from_yaml(tmp_path / "p.yaml").icd9_codes == ["E8889"]
 
 
-# ---- Damaged and duplicate files -------------------------------------------------
+# ---- Damaged files ------------------------------------------------------------
 def test_incomplete_download_gives_readable_error(data_dir):
-    path = data_dir / "mimic-iv-ed-2.2/ed/edstays.csv.gz"
+    path = data_dir / "ed/edstays.csv.gz"
     header = "subject_id,hadm_id,stay_id,intime,disposition\n"
     rows = "".join(f"{i},{i * 7919 % 100003},{i * 104729 % 1000003},2150-01-01,HOME\n" for i in range(200_000))
     big = gzip.compress((header + rows).encode())
@@ -61,18 +61,9 @@ def test_incomplete_download_gives_readable_error(data_dir):
 
 
 def test_empty_file_fails_the_check(data_dir):
-    (data_dir / "mimic-iv-ed-2.2/ed/triage.csv.gz").write_bytes(b"")
+    (data_dir / "ed/triage.csv.gz").write_bytes(b"")
     bad = [r for r in check_data(data_dir) if not r.ok]
     assert bad[0].table.key == "triage" and "Download it again" in bad[0].message
-
-
-def test_duplicate_copies_are_reported(data_dir):
-    src = data_dir / "mimic-iv-3.1/hosp/patients.csv.gz"
-    copy = data_dir / "old/mimic-iv-2.2/hosp/patients.csv.gz"
-    copy.parent.mkdir(parents=True)
-    copy.write_bytes(src.read_bytes())
-    patients = next(r for r in check_data(data_dir) if r.table.key == "patients")
-    assert patients.ok and "2 copies found" in patients.note
 
 
 def test_data_folder_is_a_file(tmp_path):

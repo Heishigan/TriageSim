@@ -6,29 +6,30 @@ import json
 import pandas as pd
 import streamlit as st
 
+from triagesim import paths
 from triagesim.cohort.review import (VERDICTS, case_details, load_review, rebuild,
                                      sample_cases, save_verdict)
 from triagesim.cohort.sources import DataLoadError, check_data
-from triagesim.ui.common import cached_tables, files_signature, list_runs, remembered
+from triagesim.ui.common import cached_tables, files_signature, list_runs
 
 st.title("Case review")
 st.warning("This page shows patient-level data. Review it on this computer only; "
            "do not screenshot, copy or share it.", icon=":material/lock:")
 
-data_dir = remembered("data_dir", "data")
-output_dir = remembered("output_dir", "outputs")
+data_dir = paths.data_dir()
+output_dir = paths.output_dir()
 checks = check_data(data_dir)
 if not all(r.ok for r in checks):
-    st.info("The data folder is not ready. Set it up in **Cohort builder** first.")
+    st.info("The data files are not all in place. Start with step 1 of **Cohort builder**.")
     st.stop()
 runs = list_runs(output_dir)
 if not runs:
-    st.info(f"No saved cohorts in '{output_dir}'. Build one in **Cohort builder** first.")
+    st.info("No saved cohorts yet. Build one in **Cohort builder** first.")
     st.stop()
 
 run_dir = st.selectbox("Cohort", runs, format_func=lambda p: p.name)
 try:
-    tables = cached_tables(data_dir, files_signature(checks))
+    tables = cached_tables(str(data_dir), files_signature(checks))
     run = rebuild(tables, run_dir)
 except (DataLoadError, OSError, ValueError) as exc:
     st.error(f"Could not open this cohort: {exc}")

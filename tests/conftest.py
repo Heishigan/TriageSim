@@ -49,13 +49,21 @@ def tables():
 
 @pytest.fixture
 def data_dir(tmp_path, tables):
-    """The same tables written as .csv.gz files in a nested download layout."""
-    layout = {"patients": "mimic-iv-3.1/hosp/patients.csv.gz",
-              "edstays": "mimic-iv-ed-2.2/ed/edstays.csv.gz",
-              "triage": "mimic-iv-ed-2.2/ed/triage.csv.gz",
-              "ed_diagnosis": "mimic-iv-ed-2.2/ed/diagnosis.csv.gz"}
+    """The same tables written as .csv.gz files in the required layout."""
+    layout = {"patients": "hosp/patients.csv.gz",
+              "edstays": "ed/edstays.csv.gz",
+              "triage": "ed/triage.csv.gz",
+              "ed_diagnosis": "ed/diagnosis.csv.gz"}
     for key, rel in layout.items():
         path = tmp_path / "data" / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         tables[key].to_csv(path, index=False)
     return tmp_path / "data"
+
+
+@pytest.fixture
+def app_dirs(data_dir, tmp_path, monkeypatch):
+    """Point the app's fixed folders at the test data and a temporary outputs folder."""
+    monkeypatch.setenv("TRIAGESIM_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("TRIAGESIM_OUTPUT_DIR", str(tmp_path / "outputs"))
+    return data_dir, tmp_path / "outputs"

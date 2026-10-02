@@ -26,16 +26,80 @@ and is reachable from this computer only. Close the black window to stop it.
 ## Data
 
 MIMIC data requires credentialed access on PhysioNet and signed data use agreements.
-Download these files and put them in one folder, keeping PhysioNet's subfolders
-(nested download folders such as `mimic-iv-3.1/hosp/` are fine):
+Put these four files in the `data` folder of TriageSim, exactly like this
+(the app creates the empty `hosp` and `ed` folders on first start):
+
+```
+TriageSim/data/
+├── ed/
+│   ├── edstays.csv.gz
+│   ├── triage.csv.gz
+│   └── diagnosis.csv.gz
+└── hosp/
+    └── patients.csv.gz
+```
 
 | File | PhysioNet project |
 |---|---|
 | `hosp/patients.csv.gz` | [MIMIC-IV v3.1](https://physionet.org/content/mimiciv/3.1/) |
 | `ed/edstays.csv.gz`, `ed/triage.csv.gz`, `ed/diagnosis.csv.gz` | [MIMIC-IV-ED v2.2](https://physionet.org/content/mimic-iv-ed/2.2/) |
 
-In the app, click **Browse** and choose that folder. The app checks the files every
-time it starts and remembers the folder. Files are read where they are; nothing is uploaded.
+Keep the files compressed and do not rename them. If a file is in the wrong place, the
+app tells you where it found it and where to move it. `data/` and `outputs/` are
+never committed to git.
+
+## Use
+
+**Cohort builder** (menu on the left) walks you through four steps. Each step must be
+complete before the next one opens.
+
+1. **Data**: shows the required layout and checks every file.
+2. **Filters**: start from a preset or set your own; invalid values block the next step.
+3. **Review**: the filters that will run, in plain words. Click **Build cohort**.
+4. **Results**: the filters applied, the cohort flow, ESI and sex counts. Results are
+   saved to `outputs/`.
+
+**Case review**: open single cases to verify the filters and record a verdict | ready |
+| Simulation and evaluation | later |
+
+## Start
+
+Double-click the start file for your system:
+
+| System | File |
+|---|---|
+| Windows | `start-windows.bat` |
+| macOS | `start-macos.command` |
+| Linux | `start-linux.sh` |
+
+The first start installs everything it needs, including Python, and takes a few
+minutes (internet required). Later starts take seconds. The app opens in your browser
+and is reachable from this computer only. Close the black window to stop it.
+
+## Data
+
+MIMIC data requires credentialed access on PhysioNet and signed data use agreements.
+Put these four files in the `data` folder of TriageSim, exactly like this
+(the app creates the empty `hosp` and `ed` folders on first start):
+
+```
+TriageSim/data/
+├── ed/
+│   ├── edstays.csv.gz
+│   ├── triage.csv.gz
+│   └── diagnosis.csv.gz
+└── hosp/
+    └── patients.csv.gz
+```
+
+| File | PhysioNet project |
+|---|---|
+| `hosp/patients.csv.gz` | [MIMIC-IV v3.1](https://physionet.org/content/mimiciv/3.1/) |
+| `ed/edstays.csv.gz`, `ed/triage.csv.gz`, `ed/diagnosis.csv.gz` | [MIMIC-IV-ED v2.2](https://physionet.org/content/mimic-iv-ed/2.2/) |
+
+Keep the files compressed and do not rename them. If a file is in the wrong place, the
+app tells you where it found it and where to move it. `data/` and `outputs/` are
+never committed to git.
 
 ## Use
 
@@ -61,8 +125,8 @@ time it starts and remembers the folder. Files are read where they are; nothing 
 Command line (optional, for scripting):
 
 ```bash
-uv run triagesim cohort check --data <folder>
-uv run triagesim cohort build --settings configs/elderly_falls.yaml --data <folder>
+uv run triagesim cohort check
+uv run triagesim cohort build --settings configs/elderly_falls.yaml
 ```
 
 ## Filters
@@ -108,7 +172,7 @@ Layout:
 ```
 src/triagesim/
   cli.py            command line and the app launcher
-  preferences.py    remembered folders (~/.triagesim/)
+  paths.py          fixed folders: data/, outputs/, configs/
   cohort/           icd.py, settings.py, sources.py, build.py, review.py
   ui/               app.py (menu), common.py, pages/ (home, cohort_builder, case_review)
 configs/            filter presets

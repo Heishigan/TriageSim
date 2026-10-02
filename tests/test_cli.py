@@ -6,8 +6,11 @@ def test_check_ok(data_dir, capsys):
     assert "MISSING" not in capsys.readouterr().out
 
 
-def test_check_fails_without_data(tmp_path):
+def test_check_fails_and_shows_layout(tmp_path, capsys):
     assert main(["cohort", "check", "--data", str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "hosp/" in out and "diagnosis.csv.gz" in out
+    assert (tmp_path / "hosp").is_dir()          # empty folders are created for the user
 
 
 def test_build(data_dir, tmp_path, capsys):

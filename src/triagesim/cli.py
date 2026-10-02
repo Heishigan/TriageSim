@@ -1,8 +1,8 @@
 """TriageSim command line.
 
     triagesim ui                                   open the app (what the start files run)
-    triagesim cohort check --data <folder>         check the MIMIC files
-    triagesim cohort build --settings <yaml> --data <folder>
+    triagesim cohort check                         check the MIMIC files in data/
+    triagesim cohort build --settings <yaml>       build a cohort into outputs/
 """
 from __future__ import annotations
 
@@ -17,16 +17,20 @@ from pathlib import Path
 
 from .cohort.build import build_cohort, save_result
 from .cohort.settings import CohortSettings
-from .cohort.sources import DataLoadError, check_data, load_tables
+from . import paths
+from .cohort.sources import DataLoadError, check_data, ensure_layout, layout_tree, load_tables
 
 
 def _check(args) -> int:
+    ensure_layout(args.data)
     results = check_data(args.data)
     for r in results:
         print(f"[{'OK' if r.ok else 'MISSING'}] {r.table.relative_path:<22} {r.message}")
-        if r.note:
-            print(f"     note: {r.note}")
-    return 0 if all(r.ok for r in results) else 1
+    if not all(r.ok for r in results):
+        print(f"\nPlace the files like this inside {Path(args.data).resolve()}:\n")
+        print(layout_tree())
+        return 1
+    return 0
 
 
 def _build(args) -> int:
@@ -105,13 +109,13 @@ def main(argv: list[str] | None = None) -> int:
     cohort = sub.add_parser("cohort", help="cohort builder").add_subparsers(dest="action", required=True)
 
     p = cohort.add_parser("check", help="check that the MIMIC files are in place")
-    p.add_argument("--data", default="data", help="folder with the MIMIC files (default: data)")
+    p.add_argument("--data", default=str(paths.data_dir()), help=argparse.SUPPRESS)
     p.set_defaults(func=_check)
 
     p = cohort.add_parser("build", help="build a cohort from a settings file")
     p.add_argument("--settings", required=True, help="YAML settings file")
-    p.add_argument("--data", default="data", help="folder with the MIMIC files (default: data)")
-    p.add_argument("--output", default="outputs", help="where to save results (default: outputs)")
+    p.add_argument("--data", default=str(paths.data_dir()), help=argparse.SUPPRESS)
+    p.add_argument("--output", default=str(paths.output_dir()), help=argparse.SUPPRESS)
     p.set_defaults(func=_build)
 
     args = parser.parse_args(argv)

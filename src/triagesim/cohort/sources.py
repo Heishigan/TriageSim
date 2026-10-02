@@ -1,8 +1,12 @@
-"""Where the MIMIC files are expected and how to check them.
+"""The MIMIC files TriageSim needs, where they must be placed, and how to check them.
 
-The user copies the PhysioNet downloads into one data folder. Files are found
-by their module folder and name (e.g. ``hosp/patients.csv.gz``) anywhere below
-that folder, so both ``data/hosp/...`` and ``data/mimic-iv-3.1/hosp/...`` work.
+Each file has one fixed place inside the data folder:
+
+    data/
+      hosp/patients.csv.gz
+      ed/edstays.csv.gz
+      ed/triage.csv.gz
+      ed/diagnosis.csv.gz
 
 Checking reads only the header line of each file, never patient rows.
 """
@@ -17,7 +21,7 @@ import pandas as pd
 @dataclass(frozen=True)
 class TableSpec:
     key: str
-    relative_path: str          # module folder + file name
+    relative_path: str          # fixed place inside the data folder
     columns: tuple[str, ...]    # columns this tool needs
     source: str                 # PhysioNet project that provides it
     url: str                    # where to download it
@@ -38,6 +42,21 @@ TABLES = (
               "https://physionet.org/content/mimic-iv-ed/2.2/"),
 )
 
+MODULE_FOLDERS = sorted({t.relative_path.split("/")[0] for t in TABLES})
+
+
+def layout_tree(root_name: str = "data") -> str:
+    """The expected folder layout as a text tree."""
+    lines = [f"{root_name}/"]
+    for i, module in enumerate(MODULE_FOLDERS):
+        last_module = i == len(MODULE_FOLDERS) - 1
+        lines.append(f"{'└──' if last_module else '├──'} {module}/")
+        files = [t.relative_path.split("/")[1] for t in TABLES if t.relative_path.startswith(module + "/")]
+        for j, name in enumerate(files):
+            branch = "└──" if j == len(files) - 1 else "├──"
+            lines.append(f"{'    ' if last_module else '│   '}{branch} {name}")
+    return "\n".join(lines)
+
 
 @dataclass
 class CheckResult:
@@ -45,49 +64,44 @@ class CheckResult:
     path: Path | None
     ok: bool
     message: str
-    note: str = ""              # non-blocking warning, e.g. duplicate copies
 
 
 class DataLoadError(Exception):
     """A data file passed the check but could not be read in full."""
 
 
-def find_table(data_dir: Path, spec: TableSpec) -> list[Path]:
-    """All copies of ``spec`` below ``data_dir`` (.csv.gz preferred over .csv)."""
-    module, filename = spec.relative_path.split("/")
-    for name in (filename, filename.removesuffix(".gz")):
-        found = sorted(p for p in data_dir.glob(f"**/{module}/{name}") if p.is_file())
-        if found:
-            return found
-    return []
+def ensure_layout(data_dir: str | Path) -> None:
+    """Create the empty data folder and its module subfolders if they are missing."""
+    for module in MODULE_FOLDERS:
+        (Path(data_dir) / module).mkdir(parents=True, exist_ok=True)
 
 
 def check_data(data_dir: str | Path) -> list[CheckResult]:
-    """Check that every required table exists and has the needed columns."""
+    """Check that every file is in its place and has the needed columns."""
     data_dir = Path(data_dir)
     results = []
     for spec in TABLES:
-        copies = find_table(data_dir, spec) if data_dir.is_dir() else []
-        if not copies:
-            results.append(CheckResult(spec, None, False,
-                                       f"Not found. Expected {spec.relative_path} from {spec.source}."))
+        path = data_dir / spec.relative_path
+        if not path.is_file():
+            elsewhere = sorted(data_dir.glob(f"**/{path.name}")) if data_dir.is_dir() else []
+            if elsewhere:
+                found = elsewhere[0].relative_to(data_dir).as_posix()
+                message = f"Found at data/{found}. Move it to data/{spec.relative_path}."
+            else:
+                message = f"Missing. Download it from {spec.source} and place it at data/{spec.relative_path}."
+            results.append(CheckResult(spec, None, False, message))
             continue
-        path = copies[0]
-        note = ""
-        if len(copies) > 1:
-            note = (f"{len(copies)} copies found; using {path.relative_to(data_dir)}. "
-                    "Remove the others to avoid mixing versions.")
         try:
             header = pd.read_csv(path, nrows=0).columns
         except Exception as exc:  # unreadable, empty or corrupt file
-            results.append(CheckResult(spec, path, False, f"Cannot read file ({exc}). Download it again.", note))
+            results.append(CheckResult(spec, path, False, f"Cannot read the file ({exc}). Download it again."))
             continue
         missing = [c for c in spec.columns if c not in header]
         if missing:
             results.append(CheckResult(spec, path, False, f"Missing columns: {', '.join(missing)}. "
-                                       f"Is this the file from {spec.source}?", note))
+                                       f"Is this the file from {spec.source}?"))
         else:
-            results.append(CheckResult(spec, path, True, "OK", note))
+            results.append(CheckResult(spec, path, True, "OK"))
     return results
 
 

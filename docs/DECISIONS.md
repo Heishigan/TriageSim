@@ -74,3 +74,20 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   cohort.csv. Reason: a non-admitted ESI 1 fall looked suspicious, but without the
   disposition (e.g. transfer, death in the ED) it could not be judged. "Not admitted"
   means no admission to this hospital; it is not the same as "sent home".
+
+## Fixed data layout and step-by-step builder (2026-10-02)
+- D27. Data lives only in `TriageSim/data/` with a fixed layout (hosp/patients.csv.gz,
+  ed/edstays|triage|diagnosis.csv.gz). No Browse button, no remembered folders
+  (preferences.py removed). The app creates the empty hosp/ and ed/ folders; a file
+  found elsewhere inside data/ gets a "move it to ..." message. Outputs always go to
+  `TriageSim/outputs/`. Tests redirect both with TRIAGESIM_DATA_DIR / TRIAGESIM_OUTPUT_DIR.
+- D28. Cohort builder is a four-step flow (Data -> Filters -> Review -> Results); a step
+  must be complete before Next unlocks. Review lists the filters before building;
+  Results lists the filters applied with the cohort flow.
+- D29. Filter values survive leaving the step or the page: each widget value is also
+  kept under 'keep.<name>' and restored before the widget is drawn (Streamlit clears
+  values of widgets that are off screen).
+- D30. Case seen in review: ESI 1 fall, not admitted, disposition HOME. Filter correct;
+  plausible clinically (high acuity at the door, e.g. anticoagulated fall, sent home
+  after a negative work-up). Reminder for the paper: nurse ESI is a judgement at the
+  door, not ground truth.

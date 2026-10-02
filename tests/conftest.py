@@ -27,6 +27,8 @@ def tables():
             "stay_id": [11, 12, 21, 31, 41, 51, 61],
             "intime": ["2150-03-01", "2151-03-01", "2150-01-01", "2150-01-01",
                        "2150-01-01", "2150-01-01", "2152-06-01"],
+            "disposition": ["ADMITTED", "ADMITTED", "ADMITTED", "TRANSFER",
+                            "ADMITTED", "ADMITTED", "ADMITTED"],
         }),
         "triage": pd.DataFrame({
             "stay_id": [11, 12, 21, 31, 41, 51, 61],

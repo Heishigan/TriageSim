@@ -60,7 +60,8 @@ def case_details(tables: dict[str, pd.DataFrame], run: SavedRun, stay_id: int) -
         ["seq_num", "icd_code", "icd_version", "icd_title", "matches_filter"]]
 
     # All ED visits of this patient, to check the one-visit-per-patient rule.
-    visits = stays.loc[stays["subject_id"] == stay["subject_id"], ["stay_id", "intime", "hadm_id"]].copy()
+    visits = stays.loc[stays["subject_id"] == stay["subject_id"],
+                       ["stay_id", "intime", "hadm_id", "disposition"]].copy()
     visits["intime"] = pd.to_datetime(visits["intime"])
     excluded = run.result.excluded.set_index("stay_id")["excluded_at"]
     cohort_ids = set(run.result.cohort["stay_id"])
@@ -73,7 +74,8 @@ def case_details(tables: dict[str, pd.DataFrame], run: SavedRun, stay_id: int) -
         "Status": status,
         "subject_id": int(stay["subject_id"]),
         "stay_id": int(stay_id),
-        "hadm_id": "not admitted" if pd.isna(stay["hadm_id"]) else int(stay["hadm_id"]),
+        "hadm_id": "none (no hospital admission)" if pd.isna(stay["hadm_id"]) else int(stay["hadm_id"]),
+        "ED disposition": "missing" if pd.isna(stay["disposition"]) else str(stay["disposition"]),
         "ED arrival": str(intime),
         "Sex": patient["gender"],
         "Age at visit": (f"{int(patient['anchor_age'] + intime.year - patient['anchor_year'])} "

@@ -37,6 +37,9 @@ def test_case_details_explain_inclusion_and_exclusion(tables, tmp_path):
         "Included", "Excluded at: First qualifying visit per patient"]
     assert included["facts"]["Age at visit"].startswith("70")
     assert case_details(tables, run, 41)["facts"]["Status"] == "Excluded at: ICD code match in ED diagnoses"
+    not_admitted = case_details(tables, run, 31)
+    assert not_admitted["facts"]["ED disposition"] == "TRANSFER"
+    assert not_admitted["visits"]["disposition"].tolist() == ["TRANSFER"]
 
 
 def test_sample_is_reproducible(tables):

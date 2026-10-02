@@ -51,8 +51,8 @@ def test_preset_codes_with_dots_are_normalized(tmp_path):
 # ---- Damaged and duplicate files -------------------------------------------------
 def test_incomplete_download_gives_readable_error(data_dir):
     path = data_dir / "mimic-iv-ed-2.2/ed/edstays.csv.gz"
-    header = "subject_id,hadm_id,stay_id,intime\n"
-    rows = "".join(f"{i},{i * 7919 % 100003},{i * 104729 % 1000003},2150-01-01\n" for i in range(200_000))
+    header = "subject_id,hadm_id,stay_id,intime,disposition\n"
+    rows = "".join(f"{i},{i * 7919 % 100003},{i * 104729 % 1000003},2150-01-01,HOME\n" for i in range(200_000))
     big = gzip.compress((header + rows).encode())
     path.write_bytes(big[: len(big) // 2])               # a download stopped halfway
     assert all(r.ok for r in check_data(data_dir))      # the header is still readable

@@ -70,3 +70,7 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   all ED diagnoses (matches ticked) and all visits of the patient with reasons; saves
   verdicts to the run's review.csv (in outputs/, never committed).
 - D25. ed/diagnosis now also needs `seq_num` and `icd_title` (for case review).
+- D26. ED disposition (edstays.disposition) is shown in case review and saved in
+  cohort.csv. Reason: a non-admitted ESI 1 fall looked suspicious, but without the
+  disposition (e.g. transfer, death in the ED) it could not be judged. "Not admitted"
+  means no admission to this hospital; it is not the same as "sent home".

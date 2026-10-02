@@ -28,7 +28,7 @@ TABLES = (
               ("subject_id", "gender", "anchor_age", "anchor_year"), "MIMIC-IV v3.1",
               "https://physionet.org/content/mimiciv/3.1/"),
     TableSpec("edstays", "ed/edstays.csv.gz",
-              ("subject_id", "hadm_id", "stay_id", "intime"), "MIMIC-IV-ED v2.2",
+              ("subject_id", "hadm_id", "stay_id", "intime", "disposition"), "MIMIC-IV-ED v2.2",
               "https://physionet.org/content/mimic-iv-ed/2.2/"),
     TableSpec("triage", "ed/triage.csv.gz",
               ("stay_id", "acuity", "chiefcomplaint"), "MIMIC-IV-ED v2.2",

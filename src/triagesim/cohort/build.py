@@ -13,7 +13,7 @@ from .icd import matches
 from .settings import ESI_LEVELS, SEXES, CohortSettings
 
 COHORT_COLUMNS = ["subject_id", "hadm_id", "stay_id", "intime", "gender", "anchor_age",
-                  "anchor_year", "age_at_ed", "acuity", "chiefcomplaint"]
+                  "anchor_year", "age_at_ed", "acuity", "chiefcomplaint", "disposition"]
 
 
 @dataclass

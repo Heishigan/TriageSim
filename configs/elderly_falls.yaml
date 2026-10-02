@@ -1,0 +1,11 @@
+# TriageSim worked example: older adults admitted through the ED after a fall.
+name: elderly_falls
+min_age: 65
+max_age: null
+sexes: [F, M]
+admission: admitted
+icd10_codes: [W00-W19]      # falls
+icd9_codes: [E880-E888]     # accidental falls (E929.3 = late effect of a fall, excluded)
+require_acuity: true
+esi_levels: [1, 2, 3, 4, 5]
+one_visit_per_patient: true

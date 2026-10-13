@@ -16,7 +16,7 @@ class Strict(BaseModel):
 
 class ModelSettings(Strict):
     name: str = Field(description="Model name in Ollama, e.g. qwen2.5:32b")
-    source: Literal["ollama", "huggingface", "fake"] = "ollama"
+    source: Literal["ollama", "huggingface", "demo", "fake"] = "ollama"
     hf_repo: str | None = Field(None, description="Hugging Face repo with a GGUF file")
     hf_file: str | None = Field(None, description="GGUF file name in that repo")
     temperature: float | None = Field(None, ge=0, le=2)

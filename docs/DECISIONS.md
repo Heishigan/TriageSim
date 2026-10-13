@@ -133,3 +133,23 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   multiple_choice. Nurse sees triage vitals by default (real triage uses them; removable).
   Self-review is on in every nurse mode, so conditions are comparable. Defaults:
   nurse/evaluator qwen2.5:32b temperature 0 seed 42; patient llama3.1:8b temperature 0.7 seed 42.
+
+## Phase 3: conversation engine and runs
+- D42. LangGraph graph per case. Interview: open -> patient -> nurse -(ask)-> patient,
+  -(decide)-> self-review -> evaluator; at the question limit the nurse is told to decide
+  now (recorded as 'forced'), instead of the thesis's "failed = ESI 0". Chart review and
+  multiple choice: read_chart -> self-review -> evaluator.
+- D43. Structured replies instead of [DECISION] tags: the nurse returns JSON each turn
+  (ask with a question, or decide with an ESI), enforced with Ollama's JSON-schema output.
+  This replaces the thesis's '?' protocol guard. A malformed reply gets one retry with the
+  error explained; retries and failures are counted per case. Formats are engine-owned;
+  researchers edit only the prompts.
+- D44. Self-review records ESI before and after (esi_initial, esi_final).
+- D45. Retrieval patient: the record is chunked, embedded with an Ollama embedding model
+  (default nomic-embed-text), top-k passages by cosine similarity; the patient model may
+  answer only from them. Replaces the thesis's FAISS + sentence-transformers (no torch).
+- D46. Runs live in outputs/runs/<name>_<stamp>/ (experiment.yaml, plan.json,
+  status.json, events.jsonl, results.jsonl). Sampling is seeded; stop and resume skip
+  finished cases; SIGTERM (Slurm time limit) stops cleanly. 'triagesim run'.
+- D47. A 'demo' model source gives canned answers so the app can be tried without a GPU.
+  Its results are meaningless and it is labelled as such.

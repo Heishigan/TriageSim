@@ -104,6 +104,40 @@ def _pull_models(args) -> int:
     return 0
 
 
+def _run(args) -> int:
+    import signal
+    import threading
+    from .experiment.config import ExperimentConfig
+    from .experiment.runner import create_run, execute, read_status
+    if args.resume:
+        run_dir = Path(args.resume)
+    else:
+        try:
+            run_dir = create_run(ExperimentConfig.from_yaml(args.experiment))
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())       # Slurm time limit: stop cleanly
+    total = read_status(run_dir).get("total", 0)
+    print(f"Run folder: {run_dir}\nCases: {total}", flush=True)
+
+    def show(event):
+        if event["type"] == "case_done":
+            st = read_status(run_dir)
+            print(f"[{st.get('done', 0) + 1}/{total}] {event['case_id']}: ESI {event['esi_final']} "
+                  f"(reference {event['reference_esi']}), {event['questions']} questions", flush=True)
+    try:
+        status = execute(run_dir, stop=stop, on_event=show)
+    except KeyboardInterrupt:
+        stop.set()
+        status = read_status(run_dir)
+    print(f"State: {status.get('state')} ({status.get('done')}/{status.get('total')} cases)")
+    if status.get("error"):
+        print(status["error"], file=sys.stderr)
+    return 0 if status.get("state") == "completed" else 1
+
+
 def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("localhost", 0))
@@ -180,6 +214,12 @@ def main(argv: list[str] | None = None) -> int:
     p = models.add_parser("pull", help="download every model an experiment uses (HF_TOKEN for gated models)")
     p.add_argument("--experiment", required=True, help="experiment YAML file")
     p.set_defaults(func=_pull_models)
+
+    p = sub.add_parser("run", help="run an experiment (or resume a stopped run)")
+    group = p.add_mutually_exclusive_group(required=True)
+    group.add_argument("--experiment", help="experiment YAML file")
+    group.add_argument("--resume", help="run folder to resume")
+    p.set_defaults(func=_run)
 
     args = parser.parse_args(argv)
     return args.func(args)

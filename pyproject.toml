@@ -16,7 +16,6 @@ dependencies = [
     "langgraph>=0.2",
     "fastapi>=0.110",
     "uvicorn>=0.29",
-    "streamlit>=1.30",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +26,9 @@ triagesim = "triagesim.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+triagesim = ["web/*", "web/assets/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

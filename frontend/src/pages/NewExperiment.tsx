@@ -1,0 +1,208 @@
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { post, useApi } from "../api";
+import { Alert, Badge, Button, Card, Field, Page, Spinner, inputClass } from "../components/ui";
+
+/* The experiment is edited as plain JSON mirroring the YAML; the server validates it. */
+type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Preset = { name: string; config: Json };
+type Fields = Record<string, { source: string; description: string }>;
+type Cohort = { name: string; cases: number | null };
+
+const ESI_HELP: Record<string, string> = {
+  interview: "The nurse interviews the patient agent, one question at a time, then decides.",
+  chart_review: "The nurse reads the chart (including the history) and decides. No conversation.",
+  multiple_choice: "The same information as a board-style multiple-choice question.",
+};
+
+export default function NewExperiment() {
+  const navigate = useNavigate();
+  const presets = useApi<Preset[]>("/experiment-presets").data ?? [];
+  const fields = useApi<Fields>("/fields").data ?? {};
+  const cohorts = (useApi<Cohort[]>("/cohorts").data ?? []).filter((c) => c.cases);
+  const models = useApi<{ models: { name: string }[] }>("/models").data?.models.map((m) => m.name) ?? [];
+  const [config, setConfig] = useState<Json | null>(null);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+
+  const choose = (p: Preset) => {
+    const c = structuredClone(p.config);
+    if (cohorts.length) c.cohort = cohorts[0].name;
+    setConfig(c);
+  };
+
+  useEffect(() => {
+    if (!config) return;
+    const id = setTimeout(async () => {
+      const r = await post<{ valid: boolean; errors: string[] }>("/experiments/validate", config);
+      setErrors(r.errors);
+    }, 300);
+    return () => clearTimeout(id);
+  }, [config]);
+
+  const set = (path: string, value: unknown) => setConfig((c) => {
+    const next = structuredClone(c!);
+    const keys = path.split(".");
+    let t = next;
+    for (const k of keys.slice(0, -1)) t = t[k];
+    t[keys[keys.length - 1]] = value;
+    return next;
+  });
+
+  const start = async () => {
+    setStarting(true); setStartError(null);
+    try {
+      const r = await post<{ name: string }>("/runs", config);
+      navigate(`/runs/${r.name}`);
+    } catch (e) { setStartError((e as Error).message); setStarting(false); }
+  };
+
+  const downloadYaml = async () => {
+    const r = await fetch("/api/experiments/yaml", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) });
+    const url = URL.createObjectURL(await r.blob());
+    Object.assign(document.createElement("a"), { href: url, download: `${config!.name}.yaml` }).click();
+  };
+
+  if (!config) {
+    return (
+      <Page title="4. New experiment" subtitle="Start from a preset, then adjust agents, models, prompts and cases.">
+        {!cohorts.length && <Alert kind="warning">No cohort has case files yet. Build them under Cohorts & cases first.</Alert>}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {presets.map((p) => (
+            <button key={p.name} onClick={() => choose(p)} className="rounded-xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-brand-500 hover:shadow">
+              <div className="flex items-center justify-between"><span className="font-semibold text-slate-900">{p.name.replace(/_/g, " ")}</span>
+                <Badge color="blue">{p.config.nurse.mode.replace("_", " ")}</Badge></div>
+              <p className="mt-2 text-sm text-slate-500">{p.config.description}</p>
+            </button>))}
+        </div>
+      </Page>
+    );
+  }
+
+  const interview = config.nurse.mode === "interview";
+  return (
+    <Page title={`4. New experiment: ${config.name}`} subtitle={config.description}
+      actions={<>
+        <Button onClick={() => setConfig(null)}>Change preset</Button>
+        <Button onClick={downloadYaml} disabled={errors.length > 0}>Download YAML</Button>
+        <Button variant="primary" disabled={errors.length > 0 || starting || !config.cohort} onClick={start}>
+          {starting ? <span className="flex items-center gap-2"><Spinner /> Starting…</span> : "Start run"}</Button>
+      </>}>
+      {errors.length > 0 && <Alert kind="error"><b>Fix before running:</b><ul className="mt-1 list-disc pl-5">{errors.map((e) => <li key={e}>{e}</li>)}</ul></Alert>}
+      {startError && <Alert kind="error">{startError}</Alert>}
+
+      <Card title="Experiment">
+        <div className="grid gap-4 md:grid-cols-4">
+          <Field label="Name"><input className={inputClass} value={config.name} onChange={(e) => set("name", e.target.value)} /></Field>
+          <Field label="Cohort (with case files)">
+            <select className={inputClass} value={config.cohort} onChange={(e) => set("cohort", e.target.value)}>
+              {!cohorts.some((c) => c.name === config.cohort) && <option value={config.cohort}>{config.cohort} (newest matching)</option>}
+              {cohorts.map((c) => <option key={c.name} value={c.name}>{c.name} ({c.cases} cases)</option>)}
+            </select></Field>
+          <Field label="Number of cases" hint="Empty = all cases">
+            <input type="number" min={1} className={inputClass} value={config.sampling.cases ?? ""}
+              onChange={(e) => set("sampling.cases", e.target.value === "" ? null : Number(e.target.value))} /></Field>
+          <Field label="Which cases" hint="Random is seeded, so it is reproducible">
+            <div className="flex gap-2">
+              <select className={inputClass} value={config.sampling.order} onChange={(e) => set("sampling.order", e.target.value)}>
+                <option value="random">Random sample</option><option value="first">First cases</option></select>
+              <input type="number" title="Seed" className={`${inputClass} w-24`} value={config.sampling.seed} onChange={(e) => set("sampling.seed", Number(e.target.value))} />
+            </div></Field>
+        </div>
+      </Card>
+
+      <AgentCard title="Nurse agent" path="nurse" agent={config.nurse} set={set} fields={fields} models={models} exclude={["persona", "esi", "disposition", "head_injury", "transcript", "decision"]}>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Field label="Mode" hint={ESI_HELP[config.nurse.mode]}>
+            <select className={inputClass} value={config.nurse.mode} onChange={(e) => {
+              set("nurse.mode", e.target.value);
+              if (e.target.value === "interview" && !config.patient) set("patient", presets.find((p) => p.name === "interview")?.config.patient);
+            }}>
+              <option value="interview">Interview</option><option value="chart_review">Chart review</option><option value="multiple_choice">Multiple choice</option>
+            </select></Field>
+          {interview && <Field label="Question limit" hint="After this many questions the nurse must decide.">
+            <input type="number" min={1} max={50} className={inputClass} value={config.nurse.max_turns} onChange={(e) => set("nurse.max_turns", Number(e.target.value))} /></Field>}
+          {interview && <Field label="Opening question"><input className={inputClass} value={config.nurse.opening_message} onChange={(e) => set("nurse.opening_message", e.target.value)} /></Field>}
+        </div>
+        <div className="mt-4 rounded-lg bg-slate-50 p-4">
+          <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={config.nurse.self_review.enabled}
+            onChange={(e) => set("nurse.self_review.enabled", e.target.checked)} />Self-review after deciding (the ESI is recorded before and after)</label>
+          {config.nurse.self_review.enabled && <textarea rows={2} className={`${inputClass} mt-2 font-mono text-xs`} value={config.nurse.self_review.prompt}
+            onChange={(e) => set("nurse.self_review.prompt", e.target.value)} />}
+        </div>
+      </AgentCard>
+
+      {interview && config.patient && (
+        <AgentCard title="Patient agent" path="patient" agent={config.patient} set={set} fields={fields} models={models} exclude={["esi", "disposition", "head_injury", "transcript", "decision", "vitals", "arrival_transport"]}>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="How the patient answers" hint={config.patient.mode === "retrieval" ? "Only from passages of the record retrieved for each question (embedding model below)." : "In character, from what the patient knows."}>
+              <select className={inputClass} value={config.patient.mode} onChange={(e) => set("patient.mode", e.target.value)}>
+                <option value="llm">Language model in character</option><option value="retrieval">Retrieval only (grounded)</option></select></Field>
+            {config.patient.mode === "retrieval" ? (
+              <Field label="Embedding model"><input className={inputClass} value={config.patient.retrieval_embedding_model} onChange={(e) => set("patient.retrieval_embedding_model", e.target.value)} /></Field>
+            ) : (
+              <Field label="Persona" hint="'random' draws one per case (reproducibly).">
+                <select className={inputClass} value={config.patient.persona} onChange={(e) => set("patient.persona", e.target.value)}>
+                  <option value="random">random (not neutral)</option>
+                  {Object.keys(config.patient.personas).map((p) => <option key={p}>{p}</option>)}</select></Field>
+            )}
+          </div>
+          {config.patient.mode === "llm" && (
+            <details className="mt-4"><summary className="cursor-pointer text-sm font-medium text-brand-600">Edit personas</summary>
+              <div className="mt-3 space-y-3">{Object.entries(config.patient.personas as Record<string, string>).map(([k, v]) => (
+                <Field key={k} label={k}><textarea rows={2} className={`${inputClass} text-xs`} value={v} onChange={(e) => set(`patient.personas.${k}`, e.target.value)} /></Field>))}</div>
+            </details>)}
+        </AgentCard>)}
+
+      {config.evaluator && (
+        <AgentCard title="Evaluator agent" path="evaluator" agent={config.evaluator} set={set} fields={fields} models={models} exclude={["persona"]}
+          toggle={<label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={config.evaluator.enabled} onChange={(e) => set("evaluator.enabled", e.target.checked)} />enabled</label>}>
+          <p className="text-sm text-slate-500">Reads the transcript and the reference answers after each case and scores the nurse (0–10) on history taking, risk identification and decision.</p>
+        </AgentCard>)}
+    </Page>
+  );
+}
+
+function AgentCard({ title, path, agent, set, fields, models, exclude, toggle, children }: {
+  title: string; path: string; agent: Json; set: (p: string, v: unknown) => void; fields: Fields; models: string[];
+  exclude: string[]; toggle?: React.ReactNode; children?: React.ReactNode;
+}) {
+  const options = useMemo(() => Object.entries(fields).filter(([k]) => !exclude.includes(k)), [fields, exclude]);
+  const sees: string[] = agent.sees;
+  const m = agent.model;
+  return (
+    <Card title={title} actions={toggle}>
+      <div className="space-y-5">
+        {children}
+        <div className="grid gap-4 md:grid-cols-4">
+          <Field label="Model source">
+            <select className={inputClass} value={m.source} onChange={(e) => set(`${path}.model.source`, e.target.value)}>
+              <option value="ollama">Ollama</option><option value="huggingface">Hugging Face GGUF</option><option value="demo">Demo (no GPU, fake answers)</option></select></Field>
+          <Field label="Model name" hint={m.source === "ollama" && models.length && !models.includes(m.name) ? "Not installed yet: it is downloaded when the run starts on the cluster, or get it under Models." : undefined}>
+            <input className={inputClass} list="installed-models" value={m.name} onChange={(e) => set(`${path}.model.name`, e.target.value)} />
+            <datalist id="installed-models">{models.map((x) => <option key={x} value={x} />)}</datalist></Field>
+          <Field label="Temperature" hint="0 = most deterministic"><input type="number" step={0.1} min={0} max={2} className={inputClass} value={m.temperature ?? ""}
+            onChange={(e) => set(`${path}.model.temperature`, e.target.value === "" ? null : Number(e.target.value))} /></Field>
+          <Field label="Seed"><input type="number" className={inputClass} value={m.seed ?? ""} onChange={(e) => set(`${path}.model.seed`, e.target.value === "" ? null : Number(e.target.value))} /></Field>
+          {m.source === "huggingface" && <>
+            <Field label="HF repository"><input className={inputClass} value={m.hf_repo ?? ""} onChange={(e) => set(`${path}.model.hf_repo`, e.target.value)} /></Field>
+            <Field label="GGUF file"><input className={inputClass} value={m.hf_file ?? ""} onChange={(e) => set(`${path}.model.hf_file`, e.target.value)} /></Field>
+          </>}
+          {m.source === "demo" && <div className="md:col-span-4"><Alert kind="warning">Demo model: canned answers to try the app. Results mean nothing.</Alert></div>}
+        </div>
+        <Field label="What this agent may read" hint="The prompt can only use fields that are ticked. Reference answers are never available to the nurse or patient.">
+          <div className="flex flex-wrap gap-2 pt-1">{options.map(([k, f]) => (
+            <label key={k} title={f.description} className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${
+              sees.includes(k) ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-600"}`}>
+              <input type="checkbox" className="hidden" checked={sees.includes(k)}
+                onChange={() => set(`${path}.sees`, sees.includes(k) ? sees.filter((x) => x !== k) : [...sees, k])} />
+              {`{${k}}`}</label>))}</div>
+        </Field>
+        <Field label="Prompt" hint="Use {field} to insert case information.">
+          <textarea rows={10} className={`${inputClass} font-mono text-xs leading-5`} value={agent.system_prompt}
+            onChange={(e) => set(`${path}.system_prompt`, e.target.value)} /></Field>
+      </div>
+    </Card>
+  );
+}

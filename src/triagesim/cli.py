@@ -149,7 +149,7 @@ def _wait_until_ready(url: str, proc: subprocess.Popen, timeout: float = 60) -> 
     deadline = time.time() + timeout
     while time.time() < deadline and proc.poll() is None:
         try:
-            opener.open(f"{url}/_stcore/health", timeout=1)
+            opener.open(f"{url}/api/health", timeout=2)
             return True
         except OSError:
             time.sleep(0.5)
@@ -157,17 +157,20 @@ def _wait_until_ready(url: str, proc: subprocess.Popen, timeout: float = 60) -> 
 
 
 def _ui(args) -> int:
-    app = Path(__file__).parent / "ui" / "app.py"
-    port = _free_port()
+    """Start the local server (localhost only) and open the app in the browser."""
+    import os
+    if args.demo:   # invented data in demo/, never the real data/ and outputs/
+        from .demo_data import make_demo_data
+        demo = paths.REPO_ROOT / "demo"
+        if not (demo / "data/hosp/patients.csv.gz").is_file():
+            make_demo_data(demo / "data")
+        os.environ["TRIAGESIM_DATA_DIR"] = str(demo / "data")
+        os.environ["TRIAGESIM_OUTPUT_DIR"] = str(demo / "outputs")
+        print("DEMO MODE: invented data, no real patients.", flush=True)
+    port = args.port or _free_port()
     url = f"http://localhost:{port}"
-    proc = subprocess.Popen([
-        sys.executable, "-m", "streamlit", "run", str(app),
-        "--server.address", "localhost",          # reachable from this computer only
-        "--server.port", str(port),
-        "--server.headless", "true",              # no first-run prompt; we open the browser
-        "--browser.gatherUsageStats", "false",    # no telemetry
-        "--server.fileWatcherType", "none",
-    ])
+    proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "triagesim.server.app:app",
+                             "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"])
     if not _wait_until_ready(url, proc):
         print("The app did not start. See the messages above.")
         proc.terminate()
@@ -189,6 +192,8 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("ui", help="open the app in the browser")
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
+    p.add_argument("--port", type=int, default=None, help="port (default: a free one)")
+    p.add_argument("--demo", action="store_true", help="use invented demo data (demo/) instead of data/")
     p.set_defaults(func=_ui)
 
     cohort = sub.add_parser("cohort", help="cohort builder").add_subparsers(dest="action", required=True)

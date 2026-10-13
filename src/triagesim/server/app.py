@@ -327,7 +327,10 @@ def test_model(body: TestIn) -> dict:
 def experiment_presets() -> list[dict]:
     out = []
     for p in sorted(paths.EXPERIMENT_PRESETS.glob("*.yaml")):
-        out.append({"name": p.stem, "config": yaml.safe_load(p.read_text(encoding="utf-8"))})
+        try:   # with every default filled in, so the editor shows exactly what will run
+            out.append({"name": p.stem, "config": ExperimentConfig.from_yaml(p).model_dump(mode="json")})
+        except ValidationError:
+            continue
     return out
 
 
@@ -343,6 +346,18 @@ def validate_experiment(body: dict) -> dict:
     except ValidationError as exc:
         return {"valid": False, "errors": _validation_errors(exc)}
     return {"valid": True, "errors": []}
+
+
+@app.post("/api/experiments/yaml")
+def experiment_yaml(body: dict):
+    """The experiment as a YAML file, e.g. to run it on a cluster with 'triagesim run'."""
+    from fastapi.responses import PlainTextResponse
+    try:
+        config = ExperimentConfig.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(422, "; ".join(_validation_errors(exc)))
+    text = yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False, allow_unicode=True, width=100)
+    return PlainTextResponse(text, headers={"Content-Disposition": f'attachment; filename="{config.name}.yaml"'})
 
 
 # ---- runs ---------------------------------------------------------------------------

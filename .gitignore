@@ -2,6 +2,7 @@
 # Whole folders: git never looks inside them.
 data/
 outputs/
+demo/
 *.csv
 *.csv.gz
 

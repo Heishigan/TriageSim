@@ -153,3 +153,18 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   finished cases; SIGTERM (Slurm time limit) stops cleanly. 'triagesim run'.
 - D47. A 'demo' model source gives canned answers so the app can be tried without a GPU.
   Its results are meaningless and it is labelled as such.
+
+## Phase 4: front end
+- D48. New front end: React + TypeScript + Tailwind (Vite), built into src/triagesim/web
+  and served by the FastAPI app, so users need no Node. Source in frontend/. Streamlit
+  removed. Menu = the pipeline: Data, Cohorts & cases, Models, New experiment, Runs & results.
+- D49. Live view uses server-sent events from events.jsonl; runs started from the app run
+  in a background thread; a run left 'running' when the app closed shows as 'interrupted'
+  and can be resumed.
+- D50. The HF token is stored only in ~/.triagesim/settings.json (or HF_TOKEN), masked in
+  the API, never in the repo or run folders.
+- D51. Demo mode (`triagesim ui --demo`, start-demo-windows.bat): invented data in demo/,
+  separate from data/ and outputs/, safe to show on a projector.
+- D52. Verified end to end in Chromium (Playwright) with invented data and the demo model:
+  cohort, cases, case review, experiment, live run, results, summary, transcript, models;
+  no console errors.

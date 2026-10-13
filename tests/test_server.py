@@ -120,3 +120,9 @@ def test_settings_mask_the_token(api):
 def test_unknown_names_are_404(api):
     assert api.get("/api/runs/nope").status_code == 404
     assert api.get("/api/cohorts/..%2F..").status_code == 404
+
+
+def test_presets_come_with_defaults_filled_in(api):
+    preset = next(p for p in api.get("/api/experiment-presets").json() if p["name"] == "interview")
+    assert "review the conversation" in preset["config"]["nurse"]["self_review"]["prompt"]
+    assert preset["config"]["patient"]["retrieval_top_k"] == 3

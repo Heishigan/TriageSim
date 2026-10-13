@@ -177,3 +177,11 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   link) or installed but stopped ("Start Ollama" button, runs `ollama serve` detached),
   and that the Demo model works without it. Suggested models split into laptop-sized
   (qwen2.5:7b, llama3.2:3b) and preset/cluster-sized (qwen2.5:32b, llama3.1:8b).
+- D55. Model catalog (configs/models.yaml, checked against ollama.com/library 2026-10-13):
+  ~30 local models by hardware tier (laptop, 12-16 GB, 24 GB, 48 GB+, embedding), incl.
+  Gemma 4, Qwen 3.5/3.8, gpt-oss, MedGemma. NVIDIA GPU memory detected with nvidia-smi;
+  models that fit are marked. Any other Ollama name can still be typed.
+- D56. Cloud models (names containing 'cloud') are rejected in experiment settings: they
+  run on Ollama's servers, and MIMIC data must not leave the machine (PhysioNet guidance).
+- D57. 'Open the data folder' uses explorer.exe on Windows and reports the result;
+  'Build case files' names the missing files; a DEMO badge shows when on invented data.

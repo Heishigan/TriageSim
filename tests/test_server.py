@@ -161,3 +161,29 @@ def test_start_ollama_when_installed(api, monkeypatch):
         __import__("triagesim.llm.base", fromlist=["ModelError"]).ModelError("down")))
     assert api.post("/api/ollama/start").json() == {"started": True, "version": "0.12.0"}
     assert started == ["C:/ollama.exe"]
+
+
+def test_model_catalog(api, monkeypatch):
+    import triagesim.server.app as server
+    monkeypatch.setattr(server, "detect_gpus", lambda: [{"name": "RTX", "memory_gb": 16.0}])
+    cat = api.get("/api/model-catalog").json()
+    assert set(cat["tiers"]) == {"laptop", "gpu16", "gpu24", "gpu48", "embedding"}
+    by_name = {m["name"]: m for m in cat["models"]}
+    assert by_name["qwen2.5:7b"]["fits_gpu"] and not by_name["qwen2.5:32b"]["fits_gpu"]
+    assert not any("cloud" in m["name"] for m in cat["models"])
+
+
+def test_case_build_names_missing_files(api, app_dirs):
+    (app_dirs[0] / "ed/medrecon.csv.gz").unlink()
+    name = api.post("/api/cohorts", json=next(p for p in api.get("/api/cohort-presets").json()
+                                              if p["name"] == "elderly_falls")["settings"]).json()["name"]
+    r = api.post(f"/api/cohorts/{name}/cases")
+    assert r.status_code == 400 and "data/ed/medrecon.csv.gz" in r.json()["detail"]
+
+
+def test_cloud_models_are_rejected(api):
+    preset = next(p for p in api.get("/api/experiment-presets").json() if p["name"] == "interview")
+    config = preset["config"]
+    config["nurse"]["model"]["name"] = "gpt-oss:120b-cloud"
+    out = api.post("/api/experiments/validate", json=config).json()
+    assert not out["valid"] and any("cloud model" in e for e in out["errors"])

@@ -7,11 +7,9 @@ type Health = { ollama: { reachable: boolean; installed: boolean; version?: stri
   settings: { ollama_url: string; hf_token_set: boolean; hf_token_hint: string } };
 
 const gb = (b: number) => `${(b / 1e9).toFixed(1)} GB`;
-const SUGGESTED = [
-  { group: "Small, for trying things on a laptop", names: ["qwen2.5:7b", "llama3.2:3b"] },
-  { group: "Used by the presets (need a large GPU, e.g. the cluster)", names: ["qwen2.5:32b", "llama3.1:8b"] },
-  { group: "For the retrieval patient", names: ["nomic-embed-text"] },
-];
+type CatalogModel = { name: string; family: string; tier: string; size_gb: number; memory_gb: number;
+  tags: string[]; note: string; installed: boolean; fits_gpu: boolean };
+type Catalog = { tiers: Record<string, string>; models: CatalogModel[]; gpus: { name: string; memory_gb: number }[]; gpu_memory_gb: number };
 
 export default function Models() {
   const models = useApi<ModelList>("/models", 2000);
@@ -21,7 +19,8 @@ export default function Models() {
       <Settings health={health.data} onSaved={() => { health.reload(); models.reload(); }} />
       {models.data && !models.data.reachable && health.data && (
         <OllamaMissing installed={health.data.ollama.installed} onStarted={() => { health.reload(); models.reload(); }} />)}
-      <Download installed={models.data?.models.map((m) => m.name) ?? []} />
+      <CatalogCard />
+      <Download />
       {!!models.data?.downloads.length && (
         <Card title="Downloads">
           <div className="space-y-4">{models.data.downloads.map((j) => (
@@ -91,7 +90,49 @@ function Settings({ health, onSaved }: { health: Health | null; onSaved: () => v
   );
 }
 
-function Download({ installed }: { installed: string[] }) {
+function CatalogCard() {
+  const catalog = useApi<Catalog>("/model-catalog", 5000).data;
+  const [onlyFits, setOnlyFits] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  if (!catalog) return null;
+  const pull = async (name: string) => {
+    setBusy(name); setError(null);
+    try { await post("/models/pull", { name }); } catch (e) { setError((e as Error).message); }
+    setBusy(null);
+  };
+  const gpu = catalog.gpus[0];
+  return (
+    <Card title="Model catalog" actions={gpu && (
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={onlyFits} onChange={(e) => setOnlyFits(e.target.checked)} />Only what fits my GPU</label>)}>
+      <p className="mb-4 text-sm text-slate-600">
+        {gpu ? <>Detected GPU: <b>{gpu.name}</b> ({gpu.memory_gb} GB). Models marked <Badge color="green">fits</Badge> should run fast on it.</>
+          : "No NVIDIA GPU detected: models run on the CPU, slowly. Start with the laptop models."}
+        {" "}Sizes are approximate. All models run on this computer; cloud models are not offered because MIMIC data must stay local.
+      </p>
+      {error && <div className="mb-3"><Alert kind="error">{error}</Alert></div>}
+      <div className="space-y-6">
+        {Object.entries(catalog.tiers).map(([tier, label]) => {
+          const rows = catalog.models.filter((m) => m.tier === tier && (!onlyFits || m.fits_gpu || tier === "embedding"));
+          if (!rows.length) return null;
+          return (
+            <div key={tier}>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</h3>
+              <Table head={["Model", "Family", "Download", "GPU memory", "", ""]} rows={rows.map((m) => [
+                <code className="text-sm">{m.name}</code>,
+                <span>{m.family} {m.tags.map((t) => <Badge key={t} color={t === "medical" ? "red" : t === "recent" ? "blue" : "gray"}>{t}</Badge>)}
+                  {m.note && <span className="block text-xs text-slate-500">{m.note}</span>}</span>,
+                `~${m.size_gb} GB`, <span>~{m.memory_gb} GB {m.fits_gpu && <Badge color="green">fits</Badge>}</span>, "",
+                m.installed ? <Badge color="green">installed</Badge>
+                  : <Button variant="ghost" disabled={busy === m.name} onClick={() => pull(m.name)}>{busy === m.name ? <Spinner /> : "Download"}</Button>])} />
+            </div>);
+        })}
+      </div>
+    </Card>
+  );
+}
+
+function Download() {
   const [source, setSource] = useState<"ollama" | "huggingface">("ollama");
   const [name, setName] = useState("");
   const [repo, setRepo] = useState("");
@@ -105,7 +146,7 @@ function Download({ installed }: { installed: string[] }) {
     } catch (e) { setError((e as Error).message); }
   };
   return (
-    <Card title="Download a model">
+    <Card title="Download any other model">
       <div className="mb-4 flex gap-2">
         {(["ollama", "huggingface"] as const).map((s) => (
           <Button key={s} variant={source === s ? "primary" : "secondary"} onClick={() => setSource(s)}>{s === "ollama" ? "Ollama library" : "Hugging Face (GGUF)"}</Button>))}
@@ -114,12 +155,7 @@ function Download({ installed }: { installed: string[] }) {
         <div className="space-y-3">
           <div className="flex gap-3"><input className={inputClass} placeholder="e.g. qwen2.5:32b" value={name} onChange={(e) => setName(e.target.value)} />
             <Button variant="primary" disabled={!name} onClick={() => start()}>Download</Button></div>
-          <div className="space-y-1 text-xs text-slate-500">{SUGGESTED.map((g) => (
-            <p key={g.group}>{g.group}: {g.names.map((m) => {
-              const have = installed.includes(m) || installed.includes(`${m}:latest`);
-              return <button key={m} className="mr-3 font-medium text-brand-600 hover:underline disabled:text-slate-400"
-                disabled={have} onClick={() => start(m)}>{m}{have ? " ✓" : ""}</button>;
-            })}</p>))}</div>
+          <p className="text-xs text-slate-500">Any model from <a className="text-brand-600 hover:underline" href="https://ollama.com/library" target="_blank" rel="noreferrer">ollama.com/library</a>, as name:size (e.g. qwen3.5:9b). Downloaded models stay on this computer and are reused; nothing is downloaded twice.</p>
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-3">

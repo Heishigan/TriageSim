@@ -17,7 +17,7 @@ const STEPS = [
   { to: "/runs", label: "Runs & results", n: 5 },
 ];
 
-type Health = { version: string; ollama: { reachable: boolean; installed: boolean; version?: string } };
+type Health = { version: string; demo: boolean; ollama: { reachable: boolean; installed: boolean; version?: string } };
 
 export default function App() {
   const { data: health } = useApi<Health>("/health", 10000);
@@ -27,6 +27,7 @@ export default function App() {
         <NavLink to="/" className="px-5 pt-6 pb-8">
           <div className="text-lg font-semibold text-white">TriageSim</div>
           <div className="text-xs text-slate-400">LLM triage testbed</div>
+          {health?.demo && <div className="mt-3 rounded-md bg-amber-400 px-2 py-1 text-center text-xs font-bold text-amber-950">DEMO · invented data</div>}
         </NavLink>
         <nav className="flex-1 space-y-1 px-3">
           {STEPS.map((s) => (

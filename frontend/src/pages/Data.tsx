@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { post, useApi } from "../api";
 import { Alert, Badge, Button, Card, Page } from "../components/ui";
 
@@ -9,13 +10,19 @@ type Check = {
 
 export default function Data() {
   const { data, error, reload, loading } = useApi<Check>("/data");
+  const [opened, setOpened] = useState<string | null>(null);
+  const openFolder = async () => {
+    try { setOpened(`Opened in your file manager: ${(await post<{ opened: string }>("/data/open-folder")).opened}`); }
+    catch (e) { setOpened((e as Error).message); }
+  };
   return (
     <Page title="1. Data" subtitle="Place the MIMIC files in the data folder of TriageSim, exactly as shown. The files never leave this computer."
       actions={<>
-        <Button onClick={() => post("/data/open-folder")}>Open the data folder</Button>
+        <Button onClick={openFolder}>Open the data folder</Button>
         <Button variant="primary" onClick={reload} disabled={loading}>Check again</Button>
       </>}>
       {error && <Alert kind="error">{error}</Alert>}
+      {opened && <Alert>{opened}</Alert>}
       {data && (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-6">

@@ -29,7 +29,7 @@ from ..experiment.fields import FIELDS
 from ..experiment.runner import create_run, execute, list_runs, read_results, read_status
 from ..llm.base import ModelError
 from ..llm.demo import DemoModel
-from ..llm.ollama import OllamaClient, OllamaModel, ensure_model, find_ollama, start_ollama
+from ..llm.ollama import OllamaClient, OllamaModel, detect_gpus, ensure_model, find_ollama, start_ollama
 from ..results.metrics import compare_runs, run_metrics
 from ..results.summary import summarize_metrics
 from .jobs import JobManager
@@ -100,7 +100,9 @@ def health() -> dict:
     except ModelError as exc:
         ollama = {"reachable": False, "error": str(exc)}
     ollama["installed"] = ollama["reachable"] or find_ollama() is not None
-    return {"version": __version__, "ollama": ollama, "settings": settings_store.public(settings_store.load())}
+    import os
+    return {"version": __version__, "ollama": ollama, "demo": os.environ.get("TRIAGESIM_DEMO") == "1",
+            "settings": settings_store.public(settings_store.load())}
 
 
 @app.post("/api/ollama/start")
@@ -167,12 +169,16 @@ def open_data_folder() -> dict:
     import subprocess
     import sys
     folder = paths.data_dir()
-    if sys.platform.startswith("win"):
-        os.startfile(folder)  # noqa: S606
-    elif sys.platform == "darwin":
-        subprocess.Popen(["open", str(folder)])
-    else:
-        subprocess.Popen(["xdg-open", str(folder)])
+    try:
+        if sys.platform.startswith("win"):
+            subprocess.Popen(["explorer", str(folder)])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(folder)])
+        else:
+            subprocess.Popen(["xdg-open", str(folder)])
+    except OSError as exc:
+        raise HTTPException(500, f"Could not open the folder ({exc}). Open it yourself: {folder}")
+    _ = os  # kept for platforms that need it
     return {"opened": str(folder)}
 
 
@@ -236,8 +242,10 @@ def start_case_build(name: str) -> dict:
         raise HTTPException(409, "A case build is already running.")
     labels = all(c.ok for c in check_data(paths.data_dir(), ("labels",)))
     purposes = ("cohort", "cases", "labels") if labels else ("cohort", "cases")
-    if not all(c.ok for c in check_data(paths.data_dir(), ("cases",))):
-        raise HTTPException(400, "The case builder files are not all in place (see Data).")
+    missing = [c for c in check_data(paths.data_dir(), ("cases",)) if not c.ok]
+    if missing:
+        raise HTTPException(400, "The case builder needs: " + "; ".join(
+            f"data/{c.table.relative_path} ({c.message})" for c in missing))
 
     def work(job):
         job.progress = {"status": "loading tables"}
@@ -315,6 +323,25 @@ class ModelIn(BaseModel):
     source: str = "ollama"
     hf_repo: str | None = None
     hf_file: str | None = None
+
+
+@app.get("/api/model-catalog")
+def model_catalog() -> dict:
+    """Curated local models by hardware tier, marked installed / fits this machine."""
+    data = yaml.safe_load((paths.CONFIG_DIR / "models.yaml").read_text(encoding="utf-8"))
+    try:
+        installed = {m["name"] for m in _ollama(quick=True).list_models()}
+    except ModelError:
+        installed = set()
+    gpus = detect_gpus()
+    vram = max((g["memory_gb"] for g in gpus), default=0)
+    models = []
+    for m in data["models"]:
+        full = m["name"] if ":" in m["name"] else f"{m['name']}:latest"
+        models.append({**m, "tags": m.get("tags", []), "note": m.get("note", ""),
+                       "installed": full in installed or m["name"] in installed,
+                       "fits_gpu": bool(vram) and m["memory_gb"] <= vram})
+    return {"tiers": data["tiers"], "models": models, "gpus": gpus, "gpu_memory_gb": vram}
 
 
 @app.post("/api/models/pull")

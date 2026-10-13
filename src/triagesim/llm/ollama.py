@@ -116,6 +116,28 @@ class OllamaClient:
             raise ModelError(f"Ollama at {self.base_url} is not reachable ({exc}). Is it running?") from exc
 
 
+def detect_gpus() -> list[dict]:
+    """NVIDIA GPUs and their memory (GB), via nvidia-smi. Empty if none or not NVIDIA."""
+    import shutil
+    import subprocess
+    exe = shutil.which("nvidia-smi")
+    if not exe:
+        return []
+    try:
+        out = subprocess.run([exe, "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    gpus = []
+    for line in out.strip().splitlines():
+        name, _, mem = line.rpartition(",")
+        try:
+            gpus.append({"name": name.strip(), "memory_gb": round(float(mem) / 1024, 1)})
+        except ValueError:
+            continue
+    return gpus
+
+
 def find_ollama() -> str | None:
     """Path of the Ollama program if it is installed, else None."""
     import os

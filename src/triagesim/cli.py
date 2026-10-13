@@ -166,6 +166,7 @@ def _ui(args) -> int:
             make_demo_data(demo / "data")
         os.environ["TRIAGESIM_DATA_DIR"] = str(demo / "data")
         os.environ["TRIAGESIM_OUTPUT_DIR"] = str(demo / "outputs")
+        os.environ["TRIAGESIM_DEMO"] = "1"
         print("DEMO MODE: invented data, no real patients.", flush=True)
     port = args.port or _free_port()
     url = f"http://127.0.0.1:{port}"

@@ -193,3 +193,10 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   ollama.com and runs it (per-user, no admin rights; it starts Ollama when done). On
   Linux/macOS the app shows the official install command. Install/Start also in the
   sidebar status.
+- D60. Blank-page safety: an error boundary shows the error on the page instead of a blank
+  screen, and browser errors are sent to the terminal log (/api/client-error). index.html is
+  served with Cache-Control: no-store so updates are picked up at once.
+- D61. Experiment models are chosen from a dropdown of installed Ollama models (plus Demo
+  and Hugging Face GGUF). A run whose Ollama models are not downloaded is refused before
+  it starts, naming the missing models.
+- D62. Fixed default port 8765 (a free one if taken), so open tabs survive a restart.

@@ -189,6 +189,19 @@ def ollama_start() -> dict:
     raise HTTPException(504, "Ollama was started but is not answering yet. Try again in a moment.")
 
 
+class ClientError(BaseModel):
+    message: str
+    where: str = ""
+    stack: str = ""
+
+
+@app.post("/api/client-error")
+def client_error(body: ClientError) -> dict:
+    """Errors from the browser, shown in the terminal so they can be read and reported."""
+    log.error("Browser error on %s: %s\n%s", body.where or "?", body.message[:500], body.stack[:2000])
+    return {"logged": True}
+
+
 class SettingsIn(BaseModel):
     ollama_url: str | None = None
     hf_token: str | None = None
@@ -526,6 +539,18 @@ def start_run(body: dict) -> dict:
         config = ExperimentConfig.model_validate(body)
     except ValidationError as exc:
         raise HTTPException(422, "; ".join(_validation_errors(exc)))
+    needed = sorted({m.name for m in config.models() if m.source == "ollama"})
+    if config.patient and config.patient.mode == "retrieval" and config.patient.model.source == "ollama":
+        needed.append(config.patient.retrieval_embedding_model)
+    if needed:
+        try:
+            installed = {m["name"] for m in _ollama(quick=True).list_models()}
+        except ModelError as exc:
+            raise HTTPException(400, f"{exc} Start Ollama (see Models) or use the Demo model.")
+        missing = [n for n in needed if n not in installed and f"{n}:latest" not in installed]
+        if missing:
+            raise HTTPException(400, f"Not downloaded yet: {', '.join(missing)}. Download under Models, "
+                                     "or choose an installed model.")
     try:
         run_dir = create_run(config)
     except FileNotFoundError as exc:
@@ -657,4 +682,4 @@ def spa(path: str):
     index = WEB_DIR / "index.html"
     if not index.is_file():
         return {"message": "The front end is not built. Run 'npm run build' in frontend/."}
-    return FileResponse(index)
+    return FileResponse(index, headers={"Cache-Control": "no-store"})

@@ -203,3 +203,35 @@ def test_terminal_log_tells_the_story(api, capsys):
     out = capsys.readouterr().out
     assert "Building cohort 'elderly_falls'" in out and "First qualifying visit per patient" in out
     assert "Cohort saved" in out and "Case files saved" in out
+
+
+def test_run_with_missing_model_is_refused_before_starting(api, monkeypatch):
+    from triagesim.llm.ollama import OllamaClient
+    monkeypatch.setattr(OllamaClient, "list_models", lambda self: [{"name": "qwen2.5:7b", "size": 1, "modified": ""}])
+    name = cohort_with_cases(api)
+    preset = next(p for p in api.get("/api/experiment-presets").json() if p["name"] == "chart_review")
+    config = preset["config"] | {"cohort": name}
+    r = api.post("/api/runs", json=config)
+    assert r.status_code == 400 and "qwen2.5:32b" in r.json()["detail"]
+    config["nurse"]["model"]["name"] = "qwen2.5:7b"
+    assert "name" in api.post("/api/runs", json=config).json()
+    assert api.get("/api/runs").json()[0]["experiment"] == "chart_review"
+
+
+def test_client_errors_reach_the_terminal(api, capsys):
+    api.post("/api/client-error", json={"message": "boom", "where": "/runs/x", "stack": "at Foo"})
+    assert "Browser error on /runs/x: boom" in capsys.readouterr().out
+
+
+def test_page_is_not_cached(api):
+    r = api.get("/runs/anything")
+    assert r.headers.get("cache-control") in ("no-store", None)   # None only when the front end is not built
+
+
+def test_preferred_port():
+    from triagesim.cli import _free_port
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        taken = s.getsockname()[1]
+        assert _free_port(taken) != taken

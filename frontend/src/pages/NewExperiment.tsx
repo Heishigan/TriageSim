@@ -127,7 +127,9 @@ export default function NewExperiment() {
         </div>
         <div className="mt-4 rounded-lg bg-slate-50 p-4">
           <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={config.nurse.self_review.enabled}
-            onChange={(e) => set("nurse.self_review.enabled", e.target.checked)} />Self-review after deciding (the ESI is recorded before and after)</label>
+            onChange={(e) => set("nurse.self_review.enabled", e.target.checked)} />Self-review after deciding</label>
+          <p className="mt-1 text-xs text-slate-500">After the nurse decides, it gets one more message asking it to double-check (the prompt below) and may change its ESI.
+            Both levels are recorded, so the results show how much the double-check changes. Switch it off to measure the nurse without it.</p>
           {config.nurse.self_review.enabled && <textarea rows={2} className={`${inputClass} mt-2 font-mono text-xs`} value={config.nurse.self_review.prompt}
             onChange={(e) => set("nurse.self_review.prompt", e.target.value)} />}
         </div>
@@ -171,17 +173,30 @@ function AgentCard({ title, path, agent, set, fields, models, exclude, toggle, c
   const options = useMemo(() => Object.entries(fields).filter(([k]) => !exclude.includes(k)), [fields, exclude]);
   const sees: string[] = agent.sees;
   const m = agent.model;
+  const installed = models.includes(m.name) || models.includes(`${m.name}:latest`);
+  const choice = m.source === "demo" ? "__demo" : m.source === "huggingface" ? "__hf" : m.name;
   return (
     <Card title={title} actions={toggle}>
       <div className="space-y-5">
         {children}
         <div className="grid gap-4 md:grid-cols-4">
-          <Field label="Model source">
-            <select className={inputClass} value={m.source} onChange={(e) => set(`${path}.model.source`, e.target.value)}>
-              <option value="ollama">Ollama</option><option value="huggingface">Hugging Face GGUF</option><option value="demo">Demo (no GPU, fake answers)</option></select></Field>
-          <Field label="Model name" hint={m.source === "ollama" && models.length && !models.includes(m.name) ? "Not installed yet: it is downloaded when the run starts on the cluster, or get it under Models." : undefined}>
-            <input className={inputClass} list="installed-models" value={m.name} onChange={(e) => set(`${path}.model.name`, e.target.value)} />
-            <datalist id="installed-models">{models.map((x) => <option key={x} value={x} />)}</datalist></Field>
+          <Field label="Model" hint={
+            m.source === "ollama" && !installed ? <span className="text-rose-600">Not downloaded. Pick an installed model or download it under Models.</span>
+            : m.source === "huggingface" ? "Downloaded from Hugging Face when needed." : undefined}>
+            <select className={inputClass} value={choice} onChange={(e) => {
+              const v = e.target.value;
+              if (v === "__demo") set(`${path}.model.source`, "demo");
+              else if (v === "__hf") set(`${path}.model.source`, "huggingface");
+              else { set(`${path}.model.source`, "ollama"); set(`${path}.model.name`, v); }
+            }}>
+              {models.length > 0 && <optgroup label="Installed">{models.map((x) => <option key={x} value={x}>{x}</option>)}</optgroup>}
+              {m.source === "ollama" && !installed && <option value={m.name}>{m.name} (not downloaded)</option>}
+              <optgroup label="Other">
+                <option value="__demo">Demo model (no GPU, fake answers)</option>
+                <option value="__hf">Hugging Face GGUF file…</option>
+              </optgroup>
+            </select></Field>
+          {m.source === "huggingface" && <Field label="Name in Ollama"><input className={inputClass} value={m.name} onChange={(e) => set(`${path}.model.name`, e.target.value)} /></Field>}
           <Field label="Temperature" hint="0 = most deterministic"><input type="number" step={0.1} min={0} max={2} className={inputClass} value={m.temperature ?? ""}
             onChange={(e) => set(`${path}.model.temperature`, e.target.value === "" ? null : Number(e.target.value))} /></Field>
           <Field label="Seed"><input type="number" className={inputClass} value={m.seed ?? ""} onChange={(e) => set(`${path}.model.seed`, e.target.value === "" ? null : Number(e.target.value))} /></Field>

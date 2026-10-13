@@ -138,9 +138,20 @@ def _run(args) -> int:
     return 0 if status.get("state") == "completed" else 1
 
 
-def _free_port() -> int:
+DEFAULT_PORT = 8765
+
+
+def _free_port(preferred: int | None = DEFAULT_PORT) -> int:
+    """The preferred port if it is free (stable address between restarts), else any free one."""
+    if preferred:
+        with socket.socket() as sock:
+            try:
+                sock.bind(("127.0.0.1", preferred))
+                return preferred
+            except OSError:
+                pass
     with socket.socket() as sock:
-        sock.bind(("localhost", 0))
+        sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
 
 
@@ -199,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("ui", help="open the app in the browser")
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
-    p.add_argument("--port", type=int, default=None, help="port (default: a free one)")
+    p.add_argument("--port", type=int, default=None, help=f"port (default {DEFAULT_PORT}, or a free one if taken)")
     p.add_argument("--demo", action="store_true", help="use invented demo data (demo/) instead of data/")
     p.set_defaults(func=_ui)
 

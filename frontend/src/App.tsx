@@ -1,4 +1,5 @@
-import { NavLink, Route, Routes } from "react-router-dom";
+import { NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useApi } from "./api";
 import { OllamaAction, type OllamaStatus } from "./components/ollama";
 import Home from "./pages/Home";
@@ -22,6 +23,7 @@ type Health = { version: string; demo: boolean; ollama: OllamaStatus };
 
 export default function App() {
   const { data: health, reload } = useApi<Health>("/health", 4000);
+  const location = useLocation();
   return (
     <div className="flex min-h-screen">
       <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col bg-slate-900 text-slate-300">
@@ -51,6 +53,7 @@ export default function App() {
         </div>
       </aside>
       <main className="min-w-0 flex-1">
+        <ErrorBoundary key={location.pathname}>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/data" element={<Data />} />
@@ -61,6 +64,7 @@ export default function App() {
           <Route path="/runs" element={<Runs />} />
           <Route path="/runs/:name" element={<RunDetail />} />
         </Routes>
+        </ErrorBoundary>
       </main>
     </div>
   );

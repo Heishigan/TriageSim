@@ -28,6 +28,7 @@ export default function RunDetail() {
         {active && <Button variant="danger" onClick={stop}>Stop</Button>}
         {(st.state === "stopped" || st.state === "interrupted" || st.state === "failed") && <Button variant="primary" onClick={resume}>Resume</Button>}
       </>}>
+      {detail.error && <Alert kind="error">Could not load this run: {detail.error}</Alert>}
       {st && (
         <Card>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
@@ -60,7 +61,10 @@ function Live({ name }: { name: string }) {
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const source = new EventSource(`/api/runs/${name}/events`);
-    source.onmessage = (e) => setEvents((prev) => [...prev, JSON.parse(e.data)]);
+    source.onmessage = (e) => {
+      try { const event = JSON.parse(e.data); setEvents((prev) => [...prev, event]); }
+      catch { /* ignore a malformed line rather than break the page */ }
+    };
     source.addEventListener("end", () => { setEnded(true); source.close(); });
     return () => source.close();
   }, [name]);

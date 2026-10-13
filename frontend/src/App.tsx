@@ -17,7 +17,7 @@ const STEPS = [
   { to: "/runs", label: "Runs & results", n: 5 },
 ];
 
-type Health = { version: string; ollama: { reachable: boolean; version?: string } };
+type Health = { version: string; ollama: { reachable: boolean; installed: boolean; version?: string } };
 
 export default function App() {
   const { data: health } = useApi<Health>("/health", 10000);
@@ -41,7 +41,8 @@ export default function App() {
         <div className="border-t border-slate-800 px-5 py-4 text-xs">
           <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${health?.ollama.reachable ? "bg-emerald-400" : "bg-rose-400"}`} />
-            {health?.ollama.reachable ? `Ollama ${health.ollama.version}` : "Ollama not running"}
+            {health?.ollama.reachable ? `Ollama ${health.ollama.version}`
+              : <NavLink to="/models" className="underline">{health?.ollama.installed ? "Ollama not running" : "Ollama not installed"}</NavLink>}
           </div>
           <div className="mt-1 text-slate-500">Version {health?.version ?? "…"} · runs on this computer</div>
         </div>

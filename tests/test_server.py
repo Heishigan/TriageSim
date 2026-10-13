@@ -141,3 +141,23 @@ def test_status_checks_use_a_short_timeout():
     from triagesim.server.app import _ollama
     assert _ollama(quick=True)._http.timeout.connect == 3.0
     assert _ollama()._http.timeout.connect == 600.0
+
+
+def test_health_reports_whether_ollama_is_installed(api, monkeypatch):
+    import triagesim.server.app as server
+    monkeypatch.setattr(server, "find_ollama", lambda: None)
+    assert api.get("/api/health").json()["ollama"] == {
+        "reachable": False, "error": api.get("/api/health").json()["ollama"]["error"], "installed": False}
+    assert api.post("/api/ollama/start").status_code == 404
+
+
+def test_start_ollama_when_installed(api, monkeypatch):
+    import triagesim.server.app as server
+    from triagesim.llm.ollama import OllamaClient
+    started = []
+    monkeypatch.setattr(server, "find_ollama", lambda: "C:/ollama.exe")
+    monkeypatch.setattr(server, "start_ollama", lambda exe: started.append(exe))
+    monkeypatch.setattr(OllamaClient, "version", lambda self: "0.12.0" if started else (_ for _ in ()).throw(
+        __import__("triagesim.llm.base", fromlist=["ModelError"]).ModelError("down")))
+    assert api.post("/api/ollama/start").json() == {"started": True, "version": "0.12.0"}
+    assert started == ["C:/ollama.exe"]

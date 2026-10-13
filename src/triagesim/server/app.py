@@ -29,7 +29,7 @@ from ..experiment.fields import FIELDS
 from ..experiment.runner import create_run, execute, list_runs, read_results, read_status
 from ..llm.base import ModelError
 from ..llm.demo import DemoModel
-from ..llm.ollama import OllamaClient, OllamaModel, ensure_model
+from ..llm.ollama import OllamaClient, OllamaModel, ensure_model, find_ollama, start_ollama
 from ..results.metrics import compare_runs, run_metrics
 from ..results.summary import summarize_metrics
 from .jobs import JobManager
@@ -99,7 +99,29 @@ def health() -> dict:
         ollama = {"reachable": True, "version": _ollama(quick=True).version()}
     except ModelError as exc:
         ollama = {"reachable": False, "error": str(exc)}
+    ollama["installed"] = ollama["reachable"] or find_ollama() is not None
     return {"version": __version__, "ollama": ollama, "settings": settings_store.public(settings_store.load())}
+
+
+@app.post("/api/ollama/start")
+def ollama_start() -> dict:
+    """Start Ollama if it is installed but not running."""
+    import time as _time
+    try:
+        return {"started": False, "already_running": True, "version": _ollama(quick=True).version()}
+    except ModelError:
+        pass
+    exe = find_ollama()
+    if not exe:
+        raise HTTPException(404, "Ollama is not installed. Download it from https://ollama.com/download")
+    start_ollama(exe)
+    for _ in range(20):
+        _time.sleep(0.5)
+        try:
+            return {"started": True, "version": _ollama(quick=True).version()}
+        except ModelError:
+            continue
+    raise HTTPException(504, "Ollama was started but is not answering yet. Try again in a moment.")
 
 
 class SettingsIn(BaseModel):

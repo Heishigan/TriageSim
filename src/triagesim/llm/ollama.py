@@ -116,6 +116,30 @@ class OllamaClient:
             raise ModelError(f"Ollama at {self.base_url} is not reachable ({exc}). Is it running?") from exc
 
 
+def find_ollama() -> str | None:
+    """Path of the Ollama program if it is installed, else None."""
+    import os
+    import shutil
+    found = shutil.which("ollama")
+    if found:
+        return found
+    candidates = [Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe",  # Windows
+                  Path("/Applications/Ollama.app/Contents/Resources/ollama"),                     # macOS
+                  Path("/usr/local/bin/ollama")]
+    return next((str(p) for p in candidates if str(p) and p.is_file()), None)
+
+
+def start_ollama(executable: str) -> None:
+    """Start 'ollama serve' in the background, detached from this process."""
+    import subprocess
+    import sys
+    flags = 0
+    if sys.platform.startswith("win"):
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
+    subprocess.Popen([executable, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     stdin=subprocess.DEVNULL, creationflags=flags, start_new_session=not flags)
+
+
 class OllamaModel:
     """A ChatModel bound to one Ollama model name."""
 

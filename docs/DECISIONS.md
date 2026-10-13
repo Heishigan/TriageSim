@@ -173,3 +173,7 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   so every check timed out and the app was reported as not started. Now: /api/ping for
   readiness (answers immediately), status checks use a 3 s Ollama timeout, Ollama and
   the app are addressed as 127.0.0.1, and a failed start says why and how to see the error.
+- D54. When Ollama is not reachable the app says whether it is not installed (download
+  link) or installed but stopped ("Start Ollama" button, runs `ollama serve` detached),
+  and that the Demo model works without it. Suggested models split into laptop-sized
+  (qwen2.5:7b, llama3.2:3b) and preset/cluster-sized (qwen2.5:32b, llama3.1:8b).

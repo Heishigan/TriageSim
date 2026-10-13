@@ -3,10 +3,15 @@ import { type Job, post, put, useApi } from "../api";
 import { Alert, Badge, Button, Card, Field, Page, Progress, Spinner, Table, inputClass } from "../components/ui";
 
 type ModelList = { reachable: boolean; error?: string; models: { name: string; size: number; modified: string }[]; downloads: Job[] };
-type Health = { settings: { ollama_url: string; hf_token_set: boolean; hf_token_hint: string } };
+type Health = { ollama: { reachable: boolean; installed: boolean; version?: string };
+  settings: { ollama_url: string; hf_token_set: boolean; hf_token_hint: string } };
 
 const gb = (b: number) => `${(b / 1e9).toFixed(1)} GB`;
-const SUGGESTED = ["qwen2.5:32b", "llama3.1:8b", "nomic-embed-text"];
+const SUGGESTED = [
+  { group: "Small, for trying things on a laptop", names: ["qwen2.5:7b", "llama3.2:3b"] },
+  { group: "Used by the presets (need a large GPU, e.g. the cluster)", names: ["qwen2.5:32b", "llama3.1:8b"] },
+  { group: "For the retrieval patient", names: ["nomic-embed-text"] },
+];
 
 export default function Models() {
   const models = useApi<ModelList>("/models", 2000);
@@ -14,8 +19,8 @@ export default function Models() {
   return (
     <Page title="3. Models" subtitle="Models run locally in Ollama. Download them from the Ollama library or from Hugging Face (GGUF files, with your token for gated models).">
       <Settings health={health.data} onSaved={() => { health.reload(); models.reload(); }} />
-      {models.data && !models.data.reachable && (
-        <Alert kind="error">Ollama is not reachable: {models.data.error} Install it from ollama.com and start it, or change its address above.</Alert>)}
+      {models.data && !models.data.reachable && health.data && (
+        <OllamaMissing installed={health.data.ollama.installed} onStarted={() => { health.reload(); models.reload(); }} />)}
       <Download installed={models.data?.models.map((m) => m.name) ?? []} />
       {!!models.data?.downloads.length && (
         <Card title="Downloads">
@@ -34,6 +39,33 @@ export default function Models() {
           empty="No models installed yet." />
       </Card>
     </Page>
+  );
+}
+
+function OllamaMissing({ installed, onStarted }: { installed: boolean; onStarted: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const start = async () => {
+    setBusy(true); setError(null);
+    try { await post("/ollama/start"); onStarted(); } catch (e) { setError((e as Error).message); }
+    setBusy(false);
+  };
+  return (
+    <Card title={installed ? "Ollama is installed but not running" : "Ollama is not installed"}>
+      <div className="space-y-3 text-sm">
+        {installed ? (
+          <div className="flex items-center gap-3"><Button variant="primary" disabled={busy} onClick={start}>
+            {busy ? <span className="flex items-center gap-2"><Spinner /> Starting…</span> : "Start Ollama"}</Button>
+            <span className="text-slate-500">or open the Ollama app from the Start menu.</span></div>
+        ) : (
+          <p>TriageSim runs models through Ollama, a free program. <a className="font-medium text-brand-600 hover:underline"
+            href="https://ollama.com/download" target="_blank" rel="noreferrer">Download Ollama</a>, install it, then come back
+            to this page. It starts by itself after installing.</p>
+        )}
+        <p className="text-slate-500">Without Ollama you can still try the whole app: in New experiment, set each agent's model source to <b>Demo</b>.</p>
+        {error && <Alert kind="error">{error}</Alert>}
+      </div>
+    </Card>
   );
 }
 
@@ -82,9 +114,12 @@ function Download({ installed }: { installed: string[] }) {
         <div className="space-y-3">
           <div className="flex gap-3"><input className={inputClass} placeholder="e.g. qwen2.5:32b" value={name} onChange={(e) => setName(e.target.value)} />
             <Button variant="primary" disabled={!name} onClick={() => start()}>Download</Button></div>
-          <p className="text-xs text-slate-500">Used by the presets: {SUGGESTED.map((m) => (
-            <button key={m} className="mr-2 text-brand-600 hover:underline disabled:text-slate-400" disabled={installed.includes(m) || installed.includes(`${m}:latest`)}
-              onClick={() => start(m)}>{m}{installed.includes(m) || installed.includes(`${m}:latest`) ? " ✓" : ""}</button>))}</p>
+          <div className="space-y-1 text-xs text-slate-500">{SUGGESTED.map((g) => (
+            <p key={g.group}>{g.group}: {g.names.map((m) => {
+              const have = installed.includes(m) || installed.includes(`${m}:latest`);
+              return <button key={m} className="mr-3 font-medium text-brand-600 hover:underline disabled:text-slate-400"
+                disabled={have} onClick={() => start(m)}>{m}{have ? " ✓" : ""}</button>;
+            })}</p>))}</div>
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-3">

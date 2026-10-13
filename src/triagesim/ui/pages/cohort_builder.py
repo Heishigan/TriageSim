@@ -19,7 +19,7 @@ STEPS = ("Data", "Filters", "Review", "Results")
 ADMISSION_LABELS = {"any": "Any", "admitted": "Admitted only", "not_admitted": "Not admitted only"}
 
 data_dir = paths.data_dir()
-output_dir = paths.output_dir()
+output_dir = paths.cohorts_dir()
 st.session_state.setdefault("wizard.step", 1)
 
 

@@ -70,7 +70,7 @@ def test_full_flow_shows_filters_and_exact_counts(app_dirs):
     assert step(at) == 4
     assert "Age 65 or older at the ED visit" in " ".join(m.value for m in at.markdown)
     assert at.table[0].value["ED stays"].tolist() == [7, 6, 5, 4, 3, 2]
-    assert len(list(app_dirs[1].iterdir())) == 1
+    assert len(list((app_dirs[1] / "cohorts").iterdir())) == 1
 
 
 def test_filters_survive_going_back_and_forth(app_dirs):

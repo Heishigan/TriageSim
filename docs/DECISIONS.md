@@ -91,3 +91,31 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   plausible clinically (high acuity at the door, e.g. anticoagulated fall, sent home
   after a negative work-up). Reminder for the paper: nurse ESI is a judgement at the
   door, not ground truth.
+
+## Sprint 2026-10-13: from cohort tool to experiment testbed
+- D31. TriageSim is its own design, inspired by the thesis but not bound to it. The thesis
+  setup becomes one experiment preset. Where a thesis choice was weak, we choose better
+  and say so.
+- D32. Phases, each ending with tests and a commit: 1 cases, 2 models and agents,
+  3 conversation engine, 4 runs with live view + new front end, 5 results, 6 cluster.
+- D33. Stack decisions (Albert): LangGraph for agent orchestration; Ollama first (also
+  pulls Hugging Face GGUF models with an HF token), OpenAI-compatible servers later
+  through the same interface; new front end now (FastAPI + React, shipped pre-built so
+  users need no Node).
+- D34. Outputs: outputs/cohorts/<cohort>/ (cohort.csv, cases.jsonl, reports) and
+  outputs/runs/<run>/.
+
+## Phase 1: case builder
+- D35. A case has four strictly separate parts: nurse_view (age, sex, chief complaint,
+  arrival mode, triage vitals), patient_view (redacted HPI, past medical history, social
+  history, allergies, ED home medications), reference (nurse ESI, disposition, admitted,
+  head-injury ICD label), audit (what redaction removed).
+- D36. HPI only (never Brief Hospital Course). Rule-based redaction: everything from the
+  first ED-course marker on ("In the ED", "initial vitals", ...) is cut; sentences about
+  imaging, test results, labs or treatment are removed; counts per rule are recorded.
+  Rules avoid fall history ("found on the floor" stays).
+- D37. Head-injury label (first version): ICD-10 S06 / ICD-9 850-854 on the admission's
+  hospital diagnoses (hosp/diagnoses_icd). Optional: without the file the label is empty.
+  A CT-report label can be added later.
+- D38. Data files grouped by purpose: cohort (4 files), cases (ed/medrecon,
+  note/discharge, extra triage/edstays columns), labels (hosp/diagnoses_icd).

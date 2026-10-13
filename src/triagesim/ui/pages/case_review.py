@@ -17,7 +17,7 @@ st.warning("This page shows patient-level data. Review it on this computer only;
            "do not screenshot, copy or share it.", icon=":material/lock:")
 
 data_dir = paths.data_dir()
-output_dir = paths.output_dir()
+output_dir = paths.cohorts_dir()
 checks = check_data(data_dir)
 if not all(r.ok for r in checks):
     st.info("The data files are not all in place. Start with step 1 of **Cohort builder**.")

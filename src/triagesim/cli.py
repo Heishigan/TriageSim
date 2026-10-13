@@ -53,6 +53,33 @@ def _build(args) -> int:
     return 0
 
 
+def _build_cases(args) -> int:
+    import pandas as pd
+    from .cases.build import CaseSettings, build_cases, read_discharge_notes, save_cases
+    run_dir = Path(args.cohort)
+    if not (run_dir / "cohort.csv").is_file():
+        print(f"Error: no cohort.csv in {run_dir}", file=sys.stderr)
+        return 1
+    purposes = ("cohort", "cases", "labels") if not args.no_labels else ("cohort", "cases")
+    try:
+        tables = load_tables(args.data, purposes, skip=("discharge",))
+    except (OSError, DataLoadError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    cohort = pd.read_csv(run_dir / "cohort.csv")
+    print("Reading discharge notes (large file, a few minutes)...", flush=True)
+    notes = read_discharge_notes(Path(args.data) / "note/discharge.csv.gz", set(cohort["hadm_id"].dropna()),
+                                 progress=lambda n: print(f"  {n:,} notes read", end="\r", flush=True))
+    cases, flow = build_cases(cohort, tables, notes, CaseSettings())
+    report = save_cases(run_dir, cases, flow, CaseSettings())
+    print()
+    for step in flow:
+        print(f"{step['step']:<30} {step['cases']:>8,}")
+    print(f"HPIs changed by redaction: {report['hpi_redacted']:,}")
+    print(f"Saved {run_dir / 'cases.jsonl'}")
+    return 0
+
+
 def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("localhost", 0))
@@ -115,8 +142,15 @@ def main(argv: list[str] | None = None) -> int:
     p = cohort.add_parser("build", help="build a cohort from a settings file")
     p.add_argument("--settings", required=True, help="YAML settings file")
     p.add_argument("--data", default=str(paths.data_dir()), help=argparse.SUPPRESS)
-    p.add_argument("--output", default=str(paths.output_dir()), help=argparse.SUPPRESS)
+    p.add_argument("--output", default=str(paths.cohorts_dir()), help=argparse.SUPPRESS)
     p.set_defaults(func=_build)
+
+    cases = sub.add_parser("cases", help="case builder").add_subparsers(dest="action", required=True)
+    p = cases.add_parser("build", help="build case files for a saved cohort")
+    p.add_argument("--cohort", required=True, help="folder of a saved cohort (in outputs/cohorts/)")
+    p.add_argument("--data", default=str(paths.data_dir()), help=argparse.SUPPRESS)
+    p.add_argument("--no-labels", action="store_true", help="skip labels (no hosp/diagnoses_icd file)")
+    p.set_defaults(func=_build_cases)
 
     args = parser.parse_args(argv)
     return args.func(args)

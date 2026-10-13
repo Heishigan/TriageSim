@@ -459,6 +459,21 @@ def pull_model(body: ModelIn) -> dict:
     return jobs.start("model", body.name, work).public()
 
 
+@app.delete("/api/models/{name:path}")
+def delete_model(name: str) -> dict:
+    """Delete an installed model, unless a running experiment is using it."""
+    for job in jobs.running("run"):
+        cfg = ExperimentConfig.from_yaml(paths.runs_dir() / job.label / "experiment.yaml")
+        if name in {m.name for m in cfg.models()}:
+            raise HTTPException(409, f"{name} is used by the running experiment {job.label}. Stop it first.")
+    try:
+        _ollama().delete(name)
+    except ModelError as exc:
+        raise HTTPException(502, str(exc))
+    log.info("Model %s: deleted", name)
+    return {"deleted": name}
+
+
 class TestIn(BaseModel):
     name: str
     source: str = "ollama"

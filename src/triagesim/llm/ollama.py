@@ -56,6 +56,15 @@ class OllamaClient:
                           prompt_tokens=data.get("prompt_eval_count", 0),
                           completion_tokens=data.get("eval_count", 0), seconds=time.time() - start)
 
+    def delete(self, name: str) -> None:
+        """Remove an installed model from Ollama (frees its disk space)."""
+        try:
+            r = self._http.request("DELETE", "/api/delete", json={"model": name})
+        except httpx.HTTPError as exc:
+            raise ModelError(f"Ollama at {self.base_url} is not reachable ({exc}). Is it running?") from exc
+        if r.status_code != 200:
+            raise ModelError(f"Could not delete {name}: {r.text[:200]}")
+
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
         return self._post("/api/embed", {"model": model, "input": texts}).get("embeddings", [])
 

@@ -21,6 +21,7 @@ export default function NewExperiment() {
   const fields = useApi<Fields>("/fields").data ?? {};
   const cohorts = (useApi<Cohort[]>("/cohorts").data ?? []).filter((c) => c.cases);
   const models = useApi<{ models: { name: string }[] }>("/models").data?.models.map((m) => m.name) ?? [];
+  const demoMode = useApi<{ demo: boolean }>("/health").data?.demo ?? false;
   const [config, setConfig] = useState<Json | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [startError, setStartError] = useState<string | null>(null);
@@ -112,7 +113,8 @@ export default function NewExperiment() {
         </div>
       </Card>
 
-      <AgentCard title="Nurse agent" path="nurse" agent={config.nurse} set={set} fields={fields} models={models} exclude={["persona", "esi", "disposition", "head_injury", "transcript", "decision"]}>
+      {!models.length && !demoMode && <Alert kind="warning">No models are downloaded yet. Download at least one under <a className="font-medium underline" href="/models">Models</a>, then come back.</Alert>}
+      <AgentCard title="Nurse agent" path="nurse" agent={config.nurse} set={set} fields={fields} models={models} demoMode={demoMode} exclude={["persona", "esi", "disposition", "head_injury", "transcript", "decision"]}>
         <div className="grid gap-4 md:grid-cols-3">
           <Field label="Mode" hint={ESI_HELP[config.nurse.mode]}>
             <select className={inputClass} value={config.nurse.mode} onChange={(e) => {
@@ -128,7 +130,7 @@ export default function NewExperiment() {
       </AgentCard>
 
       {interview && config.patient && (
-        <AgentCard title="Patient agent" path="patient" agent={config.patient} set={set} fields={fields} models={models} exclude={["esi", "disposition", "head_injury", "transcript", "decision", "vitals", "arrival_transport"]}>
+        <AgentCard title="Patient agent" path="patient" agent={config.patient} set={set} fields={fields} models={models} demoMode={demoMode} exclude={["esi", "disposition", "head_injury", "transcript", "decision", "vitals", "arrival_transport"]}>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="How the patient answers" hint={config.patient.mode === "retrieval" ? "Only from passages of the record retrieved for each question (embedding model below)." : "In character, from what the patient knows."}>
               <select className={inputClass} value={config.patient.mode} onChange={(e) => set("patient.mode", e.target.value)}>
@@ -150,7 +152,7 @@ export default function NewExperiment() {
         </AgentCard>)}
 
       {config.evaluator && (
-        <AgentCard title="Evaluator agent" path="evaluator" agent={config.evaluator} set={set} fields={fields} models={models} exclude={["persona"]}
+        <AgentCard title="Evaluator agent" path="evaluator" agent={config.evaluator} set={set} fields={fields} models={models} demoMode={demoMode} exclude={["persona"]}
           toggle={<label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={config.evaluator.enabled} onChange={(e) => set("evaluator.enabled", e.target.checked)} />enabled</label>}>
           <p className="text-sm text-slate-500">Reads the transcript and the reference answers after each case and scores the nurse (0–10) on history taking, risk identification and decision.</p>
         </AgentCard>)}
@@ -158,37 +160,31 @@ export default function NewExperiment() {
   );
 }
 
-function AgentCard({ title, path, agent, set, fields, models, exclude, toggle, children }: {
-  title: string; path: string; agent: Json; set: (p: string, v: unknown) => void; fields: Fields; models: string[];
+function AgentCard({ title, path, agent, set, fields, models, demoMode, exclude, toggle, children }: {
+  title: string; path: string; agent: Json; set: (p: string, v: unknown) => void; fields: Fields; models: string[]; demoMode: boolean;
   exclude: string[]; toggle?: React.ReactNode; children?: React.ReactNode;
 }) {
   const options = useMemo(() => Object.entries(fields).filter(([k]) => !exclude.includes(k)), [fields, exclude]);
   const sees: string[] = agent.sees;
   const m = agent.model;
   const installed = models.includes(m.name) || models.includes(`${m.name}:latest`);
-  const choice = m.source === "demo" ? "__demo" : m.source === "huggingface" ? "__hf" : m.name;
+  const choice = m.source === "demo" ? "__demo" : installed ? m.name : "";
   return (
     <Card title={title} actions={toggle}>
       <div className="space-y-5">
         {children}
         <div className="grid gap-4 md:grid-cols-4">
-          <Field label="Model" hint={
-            m.source === "ollama" && !installed ? <span className="text-rose-600">Not downloaded. Pick an installed model or download it under Models.</span>
-            : m.source === "huggingface" ? "Downloaded from Hugging Face when needed." : undefined}>
+          <Field label="Model" hint={!choice ? <span className="text-rose-600">Choose a downloaded model{m.name ? ` (the preset's ${m.name} is not downloaded)` : ""}.</span>
+            : "Only downloaded models are listed. Get more under Models."}>
             <select className={inputClass} value={choice} onChange={(e) => {
               const v = e.target.value;
               if (v === "__demo") set(`${path}.model.source`, "demo");
-              else if (v === "__hf") set(`${path}.model.source`, "huggingface");
               else { set(`${path}.model.source`, "ollama"); set(`${path}.model.name`, v); }
             }}>
-              {models.length > 0 && <optgroup label="Installed">{models.map((x) => <option key={x} value={x}>{x}</option>)}</optgroup>}
-              {m.source === "ollama" && !installed && <option value={m.name}>{m.name} (not downloaded)</option>}
-              <optgroup label="Other">
-                <option value="__demo">Demo model (no GPU, fake answers)</option>
-                <option value="__hf">Hugging Face GGUF file…</option>
-              </optgroup>
+              {!choice && <option value="" disabled>Choose a model…</option>}
+              {models.map((x) => <option key={x} value={x}>{x}</option>)}
+              {demoMode && <option value="__demo">Demo model (fake answers, demo mode only)</option>}
             </select></Field>
-          {m.source === "huggingface" && <Field label="Name in Ollama"><input className={inputClass} value={m.name} onChange={(e) => set(`${path}.model.name`, e.target.value)} /></Field>}
           <Field label="Temperature" hint="0 = most deterministic"><input type="number" step={0.1} min={0} max={2} className={inputClass} value={m.temperature ?? ""}
             onChange={(e) => set(`${path}.model.temperature`, e.target.value === "" ? null : Number(e.target.value))} /></Field>
           <Field label="Seed"><input type="number" className={inputClass} value={m.seed ?? ""} onChange={(e) => set(`${path}.model.seed`, e.target.value === "" ? null : Number(e.target.value))} /></Field>

@@ -68,7 +68,11 @@ function Live({ name }: { name: string }) {
     source.addEventListener("end", () => { setEnded(true); source.close(); });
     return () => source.close();
   }, [name]);
-  useEffect(() => bottom.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), [events.length]);
+  useEffect(() => {
+    // Braces matter: an effect may only return a clean-up function. Newer Chrome returns a
+    // Promise from scrollIntoView, which React would then try to call.
+    bottom.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [events.length]);
 
   const caseIds = useMemo(() => [...new Set(events.filter((e) => e.case_id).map((e) => e.case_id!))], [events]);
   const [pick, setPick] = useState<string | null>(null);

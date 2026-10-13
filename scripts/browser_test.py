@@ -24,6 +24,10 @@ with sync_playwright() as p:
     browser = p.chromium.launch()
     page = browser.new_page(viewport={"width": 1400, "height": 900})
     page.on("pageerror", lambda e: errors.append(str(e)))
+    # Behave like newer Chrome, where scrollIntoView returns a Promise (this once broke the run page).
+    page.add_init_script("const s = Element.prototype.scrollIntoView;"
+                         "Element.prototype.scrollIntoView = function (...a) { s.apply(this, a); return Promise.resolve(); };")
+    page.add_init_script("window.addEventListener('error', e => console.error(e.message));")
 
     def shot(name):
         page.screenshot(path=str(shots / f"{name}.png"), full_page=True)
@@ -51,6 +55,8 @@ with sync_playwright() as p:
     button("Start run"); page.wait_for_selector("text=Conversation", timeout=30000); time.sleep(1.5); shot("10_live")
     page.wait_for_selector("text=completed", timeout=120000)
     button("Results"); page.wait_for_selector("text=Agreement with nurse"); shot("11_results")
+    if page.locator("text=This page ran into a problem").count():
+        errors.append("error page shown after leaving the Live tab")
     button("Cases"); page.get_by_role("button", name="Transcript").first.click()
     page.wait_for_selector("text=Transcript ·"); shot("12_transcript")
     link("3 Models"); page.wait_for_selector("text=Model catalog"); shot("13_models")

@@ -235,3 +235,11 @@ def test_preferred_port():
         s.bind(("127.0.0.1", 0))
         taken = s.getsockname()[1]
         assert _free_port(taken) != taken
+
+
+def test_delete_model_endpoint(api, monkeypatch):
+    from triagesim.llm.ollama import OllamaClient
+    deleted = []
+    monkeypatch.setattr(OllamaClient, "delete", lambda self, name: deleted.append(name))
+    assert api.delete("/api/models/llama3.2:3b").json() == {"deleted": "llama3.2:3b"}
+    assert deleted == ["llama3.2:3b"]

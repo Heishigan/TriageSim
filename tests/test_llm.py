@@ -92,3 +92,21 @@ def test_huggingface_download_uses_token_and_reports_refusal(tmp_path):
 def test_fake_model_replies_in_order():
     m = FakeModel(replies=["a", "b"])
     assert [m.chat([]).content for _ in range(3)] == ["a", "b", "b"]
+
+
+def test_delete_model():
+    class Mock(MockOllama):
+        def __call__(self, request):
+            if request.url.path == "/api/delete":
+                name = json.loads(request.content)["model"]
+                if name not in self.installed:
+                    return httpx.Response(404, json={"error": f"model '{name}' not found"})
+                self.installed.remove(name)
+                return httpx.Response(200)
+            return super().__call__(request)
+    mock = Mock()
+    c = client(mock)
+    c.delete("qwen2.5:32b")
+    assert not c.has_model("qwen2.5:32b")
+    with pytest.raises(ModelError, match="not found"):
+        c.delete("qwen2.5:32b")

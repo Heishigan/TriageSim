@@ -7,3 +7,5 @@ Read `docs/DECISIONS.md` and `README.md` first, and follow them.
 - Ask Albert before deleting anything.
 - Small steps; explain each change; add or update tests; run `pytest`.
 - Record every design decision in `docs/DECISIONS.md` in the same step.
+- Commits are Albert's alone: never add Co-Authored-By, AI session links or any AI attribution
+  to commit messages or pull requests.

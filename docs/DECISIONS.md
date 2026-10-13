@@ -206,3 +206,12 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   it downplays the experiment's core question (the nurse's own decision), and in the thesis
   it mostly just shifted the ESI. Each case now has one ESI ('esi'); after deciding, the
   case goes straight to the evaluator.
+- D64. Live-view crash fixed: an effect implicitly returned scrollIntoView's result; newer
+  Chrome returns a Promise there, which React then tried to call as a clean-up function
+  ("_ is not a function"), crashing the run page (the earlier blank pages). The browser
+  test now mimics that Chrome behaviour.
+- D65. Models page: installed models listed first, each with Delete (browser confirmation;
+  refused while a running experiment uses the model); catalog sections collapsible.
+  Experiment model dropdown lists only downloaded models; the Demo model only in demo mode.
+- D66. Commits carry Albert as sole author, without AI attribution trailers (history rewritten
+  once on 2026-10-13 to remove earlier trailers).

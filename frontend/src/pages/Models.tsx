@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { type Job, post, put, useApi } from "../api";
+import { type Job, api, post, put, useApi } from "../api";
 import { Alert, Badge, Button, Card, Field, Page, Progress, Spinner, Table, inputClass } from "../components/ui";
 import { OllamaAction, type OllamaStatus } from "../components/ollama";
 
@@ -20,6 +20,12 @@ export default function Models() {
       <Settings health={health.data} onSaved={() => { health.reload(); models.reload(); }} />
       {models.data && !models.data.reachable && health.data && (
         <OllamaMissing status={health.data.ollama} onChange={() => { health.reload(); models.reload(); }} />)}
+      <Card title="Installed in Ollama">
+        <Table head={["Model", "Size", "Downloaded", "", ""]} rows={(models.data?.models ?? []).map((m) => [
+          <code>{m.name}</code>, gb(m.size), m.modified?.slice(0, 10), <TestButton name={m.name} />,
+          <DeleteButton name={m.name} size={m.size} onDeleted={models.reload} />])}
+          empty="No models installed yet." />
+      </Card>
       <CatalogCard />
       <Download />
       {!!models.data?.downloads.length && (
@@ -33,11 +39,6 @@ export default function Models() {
               {j.error && <p className="text-xs text-rose-600">{j.error}</p>}
             </div>))}</div>
         </Card>)}
-      <Card title="Installed in Ollama">
-        <Table head={["Model", "Size", "", ""]} rows={(models.data?.models ?? []).map((m) => [
-          <code>{m.name}</code>, gb(m.size), m.modified?.slice(0, 10), <TestButton name={m.name} />])}
-          empty="No models installed yet." />
-      </Card>
     </Page>
   );
 }
@@ -50,7 +51,7 @@ function OllamaMissing({ status, onChange }: { status: OllamaStatus; onChange: (
           target="_blank" rel="noreferrer">Ollama</a>, a free program that keeps everything on this computer.
           {!status.installed && status.platform === "windows" && " One click downloads the official installer from ollama.com and runs it (no administrator rights needed)."}</p>
         <OllamaAction status={status} onChange={onChange} />
-        <p className="text-slate-500">Without Ollama you can still try the whole app: in New experiment, set each agent's model source to <b>Demo</b>.</p>
+        <p className="text-slate-500">Without Ollama you can still try the whole app in demo mode (<code>start-demo-windows.bat</code>), which offers a Demo model with invented answers.</p>
       </div>
     </Card>
   );
@@ -100,13 +101,19 @@ function CatalogCard() {
         {" "}Sizes are approximate. All models run on this computer; cloud models are not offered because MIMIC data must stay local.
       </p>
       {error && <div className="mb-3"><Alert kind="error">{error}</Alert></div>}
-      <div className="space-y-6">
-        {Object.entries(catalog.tiers).map(([tier, label]) => {
+      <div className="space-y-3">
+        {Object.entries(catalog.tiers).map(([tier, label], i) => {
           const rows = catalog.models.filter((m) => m.tier === tier && (!onlyFits || m.fits_gpu || tier === "embedding"));
           if (!rows.length) return null;
+          const have = rows.filter((m) => m.installed).length;
           return (
-            <div key={tier}>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</h3>
+            <details key={tier} open={i === 0} className="group rounded-lg border border-slate-200">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 hover:bg-slate-50">
+                <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                  <span className="text-slate-400 transition group-open:rotate-90">▶</span>{label}</span>
+                <span className="text-xs text-slate-500">{rows.length} models{have ? ` · ${have} installed` : ""}</span>
+              </summary>
+              <div className="border-t border-slate-100 px-4 py-2">
               <Table head={["Model", "Family", "Download", "GPU memory", "", ""]} rows={rows.map((m) => [
                 <code className="text-sm">{m.name}</code>,
                 <span>{m.family} {m.tags.map((t) => <Badge key={t} color={t === "medical" ? "red" : t === "recent" ? "blue" : "gray"}>{t}</Badge>)}
@@ -114,7 +121,8 @@ function CatalogCard() {
                 `~${m.size_gb} GB`, <span>~{m.memory_gb} GB {m.fits_gpu && <Badge color="green">fits</Badge>}</span>, "",
                 m.installed ? <Badge color="green">installed</Badge>
                   : <Button variant="ghost" disabled={busy === m.name} onClick={() => pull(m.name)}>{busy === m.name ? <Spinner /> : "Download"}</Button>])} />
-            </div>);
+              </div>
+            </details>);
         })}
       </div>
     </Card>
@@ -157,6 +165,23 @@ function Download() {
       {error && <div className="mt-3"><Alert kind="error">{error}</Alert></div>}
     </Card>
   );
+}
+
+function DeleteButton({ name, size, onDeleted }: { name: string; size: number; onDeleted: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const remove = async () => {
+    const ok = window.confirm(`Delete ${name} from this computer?\n\nThis frees about ${gb(size)} of disk space. `
+      + "Past results are not affected, and you can download the model again later.");
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await api(`/models/${encodeURIComponent(name)}`, { method: "DELETE" });
+      onDeleted();
+    } catch (e) { window.alert((e as Error).message); }
+    setBusy(false);
+  };
+  return <button className="text-sm font-medium text-rose-600 hover:underline disabled:text-slate-400" disabled={busy} onClick={remove}>
+    {busy ? "Deleting…" : "Delete"}</button>;
 }
 
 function TestButton({ name }: { name: string }) {

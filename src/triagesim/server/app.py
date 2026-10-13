@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
 from .. import __version__, paths, settings_store
+from ..logs import Throttle, configure as configure_logging, log
 from ..cases.build import CaseSettings, build_cases, load_cases, read_discharge_notes, save_cases
 from ..cohort import review as cohort_review
 from ..cohort.build import build_cohort, save_result
@@ -29,21 +30,49 @@ from ..experiment.fields import FIELDS
 from ..experiment.runner import create_run, execute, list_runs, read_results, read_status
 from ..llm.base import ModelError
 from ..llm.demo import DemoModel
-from ..llm.ollama import OllamaClient, OllamaModel, ensure_model
+from ..llm.ollama import (INSTALL_HELP, OllamaClient, OllamaModel, detect_gpus, ensure_model, find_ollama,
+                          install_ollama_windows, start_ollama)
 from ..results.metrics import compare_runs, run_metrics
 from ..results.summary import summarize_metrics
 from .jobs import JobManager
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
-app = FastAPI(title="TriageSim", version=__version__)
+configure_logging()
+
+
+def _startup_banner() -> None:
+    import os
+    log.info("TriageSim %s%s", __version__, "  [DEMO MODE: invented data]" if os.environ.get("TRIAGESIM_DEMO") == "1" else "")
+    log.info("Data folder:    %s", paths.data_dir())
+    log.info("Output folder:  %s", paths.output_dir())
+    for purpose, label in PURPOSES.items():
+        missing = [c.table.relative_path for c in check_data(paths.data_dir(), (purpose,)) if not c.ok]
+        log.info("%-16s %s", label + ":", "ready" if not missing else "missing " + ", ".join(missing))
+    try:
+        log.info("Ollama:         %s at %s", _ollama(quick=True).version(), settings_store.load()["ollama_url"])
+    except ModelError:
+        log.warning("Ollama:         not reachable (%s)", "installed but stopped" if find_ollama() else "not installed")
+
+
+from contextlib import asynccontextmanager  # noqa: E402
+
+
+@asynccontextmanager
+async def _lifespan(_app):
+    _startup_banner()
+    yield
+
+
+app = FastAPI(title="TriageSim", version=__version__, lifespan=_lifespan)
 jobs = JobManager()
 _tables_cache: dict[tuple, dict] = {}
 _tables_lock = threading.Lock()
 
 
 # ---- helpers ------------------------------------------------------------------------
-def _ollama() -> OllamaClient:
-    return OllamaClient(settings_store.load()["ollama_url"])
+def _ollama(quick: bool = False) -> OllamaClient:
+    """Ollama client. ``quick`` = short timeout, for status checks that must not hang."""
+    return OllamaClient(settings_store.load()["ollama_url"], timeout=3.0 if quick else 600.0)
 
 
 def _cached_tables(purposes: tuple[str, ...], skip: tuple[str, ...] = ()) -> dict[str, pd.DataFrame]:
@@ -86,13 +115,91 @@ def _validation_errors(exc: ValidationError) -> list[str]:
 
 
 # ---- system -------------------------------------------------------------------------
+@app.get("/api/ping")
+def ping() -> dict:
+    """Answers immediately; used by the launcher to know the app is up."""
+    return {"ok": True}
+
+
 @app.get("/api/health")
 def health() -> dict:
     try:
-        ollama = {"reachable": True, "version": _ollama().version()}
+        ollama = {"reachable": True, "version": _ollama(quick=True).version()}
     except ModelError as exc:
         ollama = {"reachable": False, "error": str(exc)}
-    return {"version": __version__, "ollama": ollama, "settings": settings_store.public(settings_store.load())}
+    ollama["installed"] = ollama["reachable"] or find_ollama() is not None
+    import os
+    import sys
+    ollama["platform"] = "windows" if sys.platform.startswith("win") else sys.platform
+    ollama["install_command"] = INSTALL_HELP.get(sys.platform)
+    ollama["installing"] = bool(jobs.running("ollama-install"))
+    return {"version": __version__, "ollama": ollama, "demo": os.environ.get("TRIAGESIM_DEMO") == "1",
+            "settings": settings_store.public(settings_store.load())}
+
+
+@app.post("/api/ollama/install")
+def ollama_install() -> dict:
+    """One-click install on Windows; elsewhere the command to run is returned in /api/health."""
+    import sys
+    if not sys.platform.startswith("win"):
+        raise HTTPException(400, f"Install Ollama with: {INSTALL_HELP.get(sys.platform, 'see https://ollama.com/download')}")
+    if jobs.running("ollama-install"):
+        raise HTTPException(409, "Ollama is already being installed.")
+
+    def work(job):
+        throttle = Throttle("Ollama install", step=20)
+
+        def progress(p):
+            job.progress = p
+            throttle(p)
+        install_ollama_windows(progress)
+        log.info("Ollama installed; waiting for it to start")
+        import time as _time
+        for _ in range(30):
+            try:
+                return {"version": _ollama(quick=True).version()}
+            except ModelError:
+                _time.sleep(1)
+        exe = find_ollama()
+        if exe:
+            start_ollama(exe)
+        return {"version": None}
+    log.info("Installing Ollama (downloading the official installer from ollama.com)")
+    return jobs.start("ollama-install", "Ollama", work).public()
+
+
+@app.post("/api/ollama/start")
+def ollama_start() -> dict:
+    """Start Ollama if it is installed but not running."""
+    import time as _time
+    try:
+        return {"started": False, "already_running": True, "version": _ollama(quick=True).version()}
+    except ModelError:
+        pass
+    exe = find_ollama()
+    if not exe:
+        raise HTTPException(404, "Ollama is not installed. Download it from https://ollama.com/download")
+    start_ollama(exe)
+    for _ in range(20):
+        _time.sleep(0.5)
+        try:
+            return {"started": True, "version": _ollama(quick=True).version()}
+        except ModelError:
+            continue
+    raise HTTPException(504, "Ollama was started but is not answering yet. Try again in a moment.")
+
+
+class ClientError(BaseModel):
+    message: str
+    where: str = ""
+    stack: str = ""
+
+
+@app.post("/api/client-error")
+def client_error(body: ClientError) -> dict:
+    """Errors from the browser, shown in the terminal so they can be read and reported."""
+    log.error("Browser error on %s: %s\n%s", body.where or "?", body.message[:500], body.stack[:2000])
+    return {"logged": True}
 
 
 class SettingsIn(BaseModel):
@@ -138,12 +245,16 @@ def open_data_folder() -> dict:
     import subprocess
     import sys
     folder = paths.data_dir()
-    if sys.platform.startswith("win"):
-        os.startfile(folder)  # noqa: S606
-    elif sys.platform == "darwin":
-        subprocess.Popen(["open", str(folder)])
-    else:
-        subprocess.Popen(["xdg-open", str(folder)])
+    try:
+        if sys.platform.startswith("win"):
+            subprocess.Popen(["explorer", str(folder)])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(folder)])
+        else:
+            subprocess.Popen(["xdg-open", str(folder)])
+    except OSError as exc:
+        raise HTTPException(500, f"Could not open the folder ({exc}). Open it yourself: {folder}")
+    _ = os  # kept for platforms that need it
     return {"opened": str(folder)}
 
 
@@ -167,11 +278,16 @@ def create_cohort(body: dict) -> dict:
         settings.validate()
     except (TypeError, ValueError) as exc:
         raise HTTPException(422, str(exc))
+    log.info("Building cohort '%s': %s", settings.name, "; ".join(settings.describe()) or "no filters")
     try:
         result = build_cohort(_cached_tables(("cohort",)), settings)
         run_dir = save_result(result, settings, paths.cohorts_dir(), paths.data_dir())
     except DataLoadError as exc:
+        log.error("Cohort build failed: %s", exc)
         raise HTTPException(400, str(exc))
+    for step in result.flow:
+        log.info("  %-40s %9s stays %9s patients", step.step, f"{step.ed_stays:,}", f"{step.patients:,}")
+    log.info("Cohort saved: %s", run_dir.name)
     return {"name": run_dir.name, "filters": settings.describe(), **result.summary()}
 
 
@@ -207,19 +323,33 @@ def start_case_build(name: str) -> dict:
         raise HTTPException(409, "A case build is already running.")
     labels = all(c.ok for c in check_data(paths.data_dir(), ("labels",)))
     purposes = ("cohort", "cases", "labels") if labels else ("cohort", "cases")
-    if not all(c.ok for c in check_data(paths.data_dir(), ("cases",))):
-        raise HTTPException(400, "The case builder files are not all in place (see Data).")
+    missing = [c for c in check_data(paths.data_dir(), ("cases",)) if not c.ok]
+    if missing:
+        raise HTTPException(400, "The case builder needs: " + "; ".join(
+            f"data/{c.table.relative_path} ({c.message})" for c in missing))
 
     def work(job):
+        log.info("Building case files for %s", name)
         job.progress = {"status": "loading tables"}
         tables = _cached_tables(purposes, skip=("discharge",))
         cohort = pd.read_csv(d / "cohort.csv")
         job.progress = {"status": "reading discharge notes", "notes_read": 0}
+        log.info("Reading discharge notes (a few minutes)")
+
+        def notes_progress(n):
+            job.progress.update(notes_read=n)
+            if n % 100_000 < 20_000:
+                log.info("  %s notes read", f"{n:,}")
         notes = read_discharge_notes(paths.data_dir() / "note/discharge.csv.gz", set(cohort["hadm_id"].dropna()),
-                                     progress=lambda n: job.progress.update(notes_read=n))
+                                     progress=notes_progress)
         job.progress = {"status": "building cases"}
         cases, flow = build_cases(cohort, tables, notes, CaseSettings())
-        return save_cases(d, cases, flow, CaseSettings())
+        report = save_cases(d, cases, flow, CaseSettings())
+        for step in flow:
+            log.info("  %-30s %9s", step["step"], f"{step['cases']:,}")
+        log.info("Case files saved: %s cases, %s HPIs changed by redaction", f"{report['cases']:,}",
+                 f"{report['hpi_redacted']:,}")
+        return report
 
     return jobs.start("cases", name, work).public()
 
@@ -274,7 +404,7 @@ def save_verdict(name: str, body: VerdictIn) -> dict:
 @app.get("/api/models")
 def installed_models() -> dict:
     try:
-        return {"reachable": True, "models": _ollama().list_models(),
+        return {"reachable": True, "models": _ollama(quick=True).list_models(),
                 "downloads": [j.public() for j in jobs.all() if j.kind == "model"]}
     except ModelError as exc:
         return {"reachable": False, "error": str(exc), "models": [],
@@ -288,6 +418,25 @@ class ModelIn(BaseModel):
     hf_file: str | None = None
 
 
+@app.get("/api/model-catalog")
+def model_catalog() -> dict:
+    """Curated local models by hardware tier, marked installed / fits this machine."""
+    data = yaml.safe_load((paths.CONFIG_DIR / "models.yaml").read_text(encoding="utf-8"))
+    try:
+        installed = {m["name"] for m in _ollama(quick=True).list_models()}
+    except ModelError:
+        installed = set()
+    gpus = detect_gpus()
+    vram = max((g["memory_gb"] for g in gpus), default=0)
+    models = []
+    for m in data["models"]:
+        full = m["name"] if ":" in m["name"] else f"{m['name']}:latest"
+        models.append({**m, "tags": m.get("tags", []), "note": m.get("note", ""),
+                       "installed": full in installed or m["name"] in installed,
+                       "fits_gpu": bool(vram) and m["memory_gb"] <= vram})
+    return {"tiers": data["tiers"], "models": models, "gpus": gpus, "gpu_memory_gb": vram}
+
+
 @app.post("/api/models/pull")
 def pull_model(body: ModelIn) -> dict:
     from ..experiment.config import ModelSettings
@@ -298,11 +447,31 @@ def pull_model(body: ModelIn) -> dict:
     settings = settings_store.load()
 
     def work(job):
+        throttle = Throttle(f"Model {body.name}")
+
         def progress(p):
             job.progress = p
-        return {"result": ensure_model(_ollama(), model, settings["hf_token"] or None,
-                                       paths.output_dir() / "models", progress)}
+            throttle(p)
+        result = ensure_model(_ollama(), model, settings["hf_token"] or None, paths.output_dir() / "models", progress)
+        log.info("Model %s: %s", body.name, result)
+        return {"result": result}
+    log.info("Model %s: download requested", body.name)
     return jobs.start("model", body.name, work).public()
+
+
+@app.delete("/api/models/{name:path}")
+def delete_model(name: str) -> dict:
+    """Delete an installed model, unless a running experiment is using it."""
+    for job in jobs.running("run"):
+        cfg = ExperimentConfig.from_yaml(paths.runs_dir() / job.label / "experiment.yaml")
+        if name in {m.name for m in cfg.models()}:
+            raise HTTPException(409, f"{name} is used by the running experiment {job.label}. Stop it first.")
+    try:
+        _ollama().delete(name)
+    except ModelError as exc:
+        raise HTTPException(502, str(exc))
+    log.info("Model %s: deleted", name)
+    return {"deleted": name}
 
 
 class TestIn(BaseModel):
@@ -327,7 +496,10 @@ def test_model(body: TestIn) -> dict:
 def experiment_presets() -> list[dict]:
     out = []
     for p in sorted(paths.EXPERIMENT_PRESETS.glob("*.yaml")):
-        out.append({"name": p.stem, "config": yaml.safe_load(p.read_text(encoding="utf-8"))})
+        try:   # with every default filled in, so the editor shows exactly what will run
+            out.append({"name": p.stem, "config": ExperimentConfig.from_yaml(p).model_dump(mode="json")})
+        except ValidationError:
+            continue
     return out
 
 
@@ -345,10 +517,34 @@ def validate_experiment(body: dict) -> dict:
     return {"valid": True, "errors": []}
 
 
+@app.post("/api/experiments/yaml")
+def experiment_yaml(body: dict):
+    """The experiment as a YAML file, e.g. to run it on a cluster with 'triagesim run'."""
+    from fastapi.responses import PlainTextResponse
+    try:
+        config = ExperimentConfig.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(422, "; ".join(_validation_errors(exc)))
+    text = yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False, allow_unicode=True, width=100)
+    return PlainTextResponse(text, headers={"Content-Disposition": f'attachment; filename="{config.name}.yaml"'})
+
+
 # ---- runs ---------------------------------------------------------------------------
 def _start_run(run_dir: Path) -> None:
+    def on_event(event):
+        if event["type"] == "case_done":
+            st = read_status(run_dir)
+            log.info("Run %s [%s/%s] %s: agent ESI %s, nurse ESI %s, %s questions", run_dir.name,
+                     st.get("done", 0) + 1, st.get("total"), event["case_id"], event.get("esi"),
+                     event.get("reference_esi"), event.get("questions"))
+        elif event["type"] == "run_failed":
+            log.error("Run %s failed: %s", run_dir.name, event.get("error"))
+
     def work(job):
-        return execute(run_dir, stop=job.stop)
+        status = execute(run_dir, stop=job.stop, on_event=on_event)
+        log.info("Run %s: %s (%s/%s cases)", run_dir.name, status.get("state"), status.get("done"), status.get("total"))
+        return status
+    log.info("Run %s: starting", run_dir.name)
     jobs.start("run", run_dir.name, work, job_id=run_dir.name)
 
 
@@ -358,6 +554,18 @@ def start_run(body: dict) -> dict:
         config = ExperimentConfig.model_validate(body)
     except ValidationError as exc:
         raise HTTPException(422, "; ".join(_validation_errors(exc)))
+    needed = sorted({m.name for m in config.models() if m.source == "ollama"})
+    if config.patient and config.patient.mode == "retrieval" and config.patient.model.source == "ollama":
+        needed.append(config.patient.retrieval_embedding_model)
+    if needed:
+        try:
+            installed = {m["name"] for m in _ollama(quick=True).list_models()}
+        except ModelError as exc:
+            raise HTTPException(400, f"{exc} Start Ollama (see Models) or use the Demo model.")
+        missing = [n for n in needed if n not in installed and f"{n}:latest" not in installed]
+        if missing:
+            raise HTTPException(400, f"Not downloaded yet: {', '.join(missing)}. Download under Models, "
+                                     "or choose an installed model.")
     try:
         run_dir = create_run(config)
     except FileNotFoundError as exc:
@@ -395,6 +603,7 @@ def stop_run(name: str) -> dict:
     job = jobs.get(name)
     if job and job.state == "running":
         job.stop.set()
+        log.info("Run %s: stop requested", name)
         return {"stopping": True}
     return {"stopping": False}
 
@@ -436,7 +645,7 @@ async def run_events(name: str, after: int = 0):
 
 
 def _row(r: dict) -> dict:
-    return {k: r.get(k) for k in ("case_id", "stay_id", "persona", "reference_esi", "esi_initial", "esi_final",
+    return {k: r.get(k) for k in ("case_id", "stay_id", "persona", "reference_esi", "esi",
                                   "head_injury", "decided", "forced", "questions", "seconds", "format_failures")} | {
         "scores": (r.get("evaluation") or {}).get("scores")}
 
@@ -488,4 +697,4 @@ def spa(path: str):
     index = WEB_DIR / "index.html"
     if not index.is_file():
         return {"message": "The front end is not built. Run 'npm run build' in frontend/."}
-    return FileResponse(index)
+    return FileResponse(index, headers={"Cache-Control": "no-store"})

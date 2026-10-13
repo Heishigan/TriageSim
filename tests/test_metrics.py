@@ -3,10 +3,9 @@ import pytest
 from triagesim.results.metrics import compare_runs, mcnemar_exact, run_metrics, weighted_kappa, wilson
 
 
-def r(case, ref, final, initial=None, head=None, persona=None, mode="interview", questions=4, scores=None):
-    return {"case_id": case, "reference_esi": ref, "esi_final": final,
-            "esi_initial": final if initial is None else initial, "head_injury": head, "persona": persona,
-            "mode": mode, "questions": questions, "decided": final is not None, "forced": False,
+def r(case, ref, esi, head=None, persona=None, mode="interview", questions=4, scores=None):
+    return {"case_id": case, "reference_esi": ref, "esi": esi, "head_injury": head, "persona": persona,
+            "mode": mode, "questions": questions, "decided": esi is not None, "forced": False,
             "format_failures": 0, "seconds": 2.0,
             "evaluation": {"scores": scores} if scores else None}
 
@@ -32,7 +31,7 @@ def test_weighted_kappa():
 def test_run_metrics():
     results = [r("a", 2, 2, head=True, persona="stoic", scores={"history_taking": 8, "risk_identification": 6,
                                                                   "decision": 7}),
-               r("b", 2, 3, initial=4, head=True, persona="stoic"),
+               r("b", 2, 3, head=True, persona="stoic"),
                r("c", 3, 2, head=False, persona="anxious"),
                r("d", 3, None, head=False)]
     m = run_metrics(results)
@@ -40,7 +39,7 @@ def test_run_metrics():
     assert m["agreement"]["k"] == 1 and m["under_triage"]["k"] == 1 and m["over_triage"]["k"] == 1
     assert m["head_injury"]["cases"] == 2 and m["head_injury"]["under_triage_vs_nurse"]["k"] == 1
     assert m["head_injury"]["esi_3_or_lower_urgency"]["k"] == 1
-    assert m["self_review"]["changed"] == 1 and m["self_review"]["more_urgent"] == 1
+    assert "self_review" not in m
     assert m["confusion"]["2"]["3"] == 1
     assert m["evaluator_scores"]["history_taking"] == {"mean": 8, "sd": 0, "n": 1}
     assert m["by_persona"]["stoic"]["cases"] == 2

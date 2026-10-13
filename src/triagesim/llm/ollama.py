@@ -17,7 +17,7 @@ import httpx
 
 from .base import ChatResult, Message, ModelError
 
-DEFAULT_URL = "http://localhost:11434"
+DEFAULT_URL = "http://127.0.0.1:11434"
 Progress = Callable[[dict], None]   # receives {"status": str, "completed": int, "total": int}
 
 
@@ -55,6 +55,15 @@ class OllamaClient:
         return ChatResult(content=data.get("message", {}).get("content", "").strip(), model=model,
                           prompt_tokens=data.get("prompt_eval_count", 0),
                           completion_tokens=data.get("eval_count", 0), seconds=time.time() - start)
+
+    def delete(self, name: str) -> None:
+        """Remove an installed model from Ollama (frees its disk space)."""
+        try:
+            r = self._http.request("DELETE", "/api/delete", json={"model": name})
+        except httpx.HTTPError as exc:
+            raise ModelError(f"Ollama at {self.base_url} is not reachable ({exc}). Is it running?") from exc
+        if r.status_code != 200:
+            raise ModelError(f"Could not delete {name}: {r.text[:200]}")
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
         return self._post("/api/embed", {"model": model, "input": texts}).get("embeddings", [])
@@ -114,6 +123,85 @@ class OllamaClient:
                         yield json.loads(line)
         except httpx.HTTPError as exc:
             raise ModelError(f"Ollama at {self.base_url} is not reachable ({exc}). Is it running?") from exc
+
+
+def detect_gpus() -> list[dict]:
+    """NVIDIA GPUs and their memory (GB), via nvidia-smi. Empty if none or not NVIDIA."""
+    import shutil
+    import subprocess
+    exe = shutil.which("nvidia-smi")
+    if not exe:
+        return []
+    try:
+        out = subprocess.run([exe, "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    gpus = []
+    for line in out.strip().splitlines():
+        name, _, mem = line.rpartition(",")
+        try:
+            gpus.append({"name": name.strip(), "memory_gb": round(float(mem) / 1024, 1)})
+        except ValueError:
+            continue
+    return gpus
+
+
+OLLAMA_WINDOWS_INSTALLER = "https://ollama.com/download/OllamaSetup.exe"
+INSTALL_HELP = {
+    "linux": "curl -fsSL https://ollama.com/install.sh | sh",
+    "darwin": "Download the app from https://ollama.com/download/mac (or: brew install ollama)",
+}
+
+
+def install_ollama_windows(progress: Progress | None = None, client: httpx.Client | None = None) -> None:
+    """Download the official Ollama installer and run it (per-user install, no admin rights).
+
+    The installer shows its own small progress window and starts Ollama when it finishes.
+    """
+    import subprocess
+    import tempfile
+    target = Path(tempfile.gettempdir()) / "OllamaSetup.exe"
+    http = client or httpx.Client(timeout=None)
+    with http.stream("GET", OLLAMA_WINDOWS_INSTALLER, follow_redirects=True) as r:
+        if r.status_code != 200:
+            raise ModelError(f"Could not download the Ollama installer ({r.status_code}).")
+        total, done = int(r.headers.get("content-length", 0)), 0
+        with open(target, "wb") as f:
+            for chunk in r.iter_bytes(1 << 20):
+                f.write(chunk)
+                done += len(chunk)
+                if progress:
+                    progress({"status": "downloading the Ollama installer", "completed": done, "total": total})
+    if progress:
+        progress({"status": "installing Ollama (follow its window)", "completed": 0, "total": 0})
+    result = subprocess.run([str(target), "/SILENT", "/NORESTART"], check=False)
+    if result.returncode != 0:
+        raise ModelError(f"The Ollama installer stopped with code {result.returncode}.")
+
+
+def find_ollama() -> str | None:
+    """Path of the Ollama program if it is installed, else None."""
+    import os
+    import shutil
+    found = shutil.which("ollama")
+    if found:
+        return found
+    candidates = [Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe",  # Windows
+                  Path("/Applications/Ollama.app/Contents/Resources/ollama"),                     # macOS
+                  Path("/usr/local/bin/ollama")]
+    return next((str(p) for p in candidates if str(p) and p.is_file()), None)
+
+
+def start_ollama(executable: str) -> None:
+    """Start 'ollama serve' in the background, detached from this process."""
+    import subprocess
+    import sys
+    flags = 0
+    if sys.platform.startswith("win"):
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
+    subprocess.Popen([executable, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     stdin=subprocess.DEVNULL, creationflags=flags, start_new_session=not flags)
 
 
 class OllamaModel:

@@ -1,181 +1,102 @@
 # TriageSim
 
-A testbed for evaluating how language models triage emergency department patients,
-using MIMIC-IV. It runs on your own computer as a small app in your browser.
-
-| Module | Status |
-|---|---|
-| **Cohort builder**: choose which ED visits to study and see the cohort flow | ready |
-| **Case review**: open single cases to verify the filters and record a verdict | ready |
-| Simulation and evaluation | later |
+An open-source testbed for evaluating how language models triage emergency department
+patients, built on MIMIC-IV. Build a cohort, turn it into cases, configure agents
+(nurse, patient, evaluator) and their models, watch the conversations live, and read
+the results. Everything runs on your own computer or your own cluster.
 
 ## Start
 
-Double-click the start file for your system:
+Double-click the start file for your system. The first start installs everything,
+including Python (a few minutes, internet needed); later starts take seconds.
 
-| System | File |
-|---|---|
-| Windows | `start-windows.bat` |
-| macOS | `start-macos.command` |
-| Linux | `start-linux.sh` |
+| | Real data | Demo (invented data, safe to show) |
+|---|---|---|
+| Windows | `start-windows.bat` | `start-demo-windows.bat` |
+| macOS / Linux | `start-macos.command` / `start-linux.sh` | `uv run triagesim ui --demo` |
 
-The first start installs everything it needs, including Python, and takes a few
-minutes (internet required). Later starts take seconds. The app opens in your browser
-and is reachable from this computer only. Close the black window to stop it.
+The app opens in your browser and is reachable from this computer only.
+Models run in [Ollama](https://ollama.com), which must be installed separately.
 
-## Data
+## The five steps (menu on the left)
 
-MIMIC data requires credentialed access on PhysioNet and signed data use agreements.
-Put these four files in the `data` folder of TriageSim, exactly like this
-(the app creates the empty `hosp` and `ed` folders on first start):
-
-```
-TriageSim/data/
-├── ed/
-│   ├── edstays.csv.gz
-│   ├── triage.csv.gz
-│   └── diagnosis.csv.gz
-└── hosp/
-    └── patients.csv.gz
-```
-
-| File | PhysioNet project |
-|---|---|
-| `hosp/patients.csv.gz` | [MIMIC-IV v3.1](https://physionet.org/content/mimiciv/3.1/) |
-| `ed/edstays.csv.gz`, `ed/triage.csv.gz`, `ed/diagnosis.csv.gz` | [MIMIC-IV-ED v2.2](https://physionet.org/content/mimic-iv-ed/2.2/) |
-
-Keep the files compressed and do not rename them. If a file is in the wrong place, the
-app tells you where it found it and where to move it. `data/` and `outputs/` are
-never committed to git.
-
-## Use
-
-**Cohort builder** (menu on the left) walks you through four steps. Each step must be
-complete before the next one opens.
-
-1. **Data**: shows the required layout and checks every file.
-2. **Filters**: start from a preset or set your own; invalid values block the next step.
-3. **Review**: the filters that will run, in plain words. Click **Build cohort**.
-4. **Results**: the filters applied, the cohort flow, ESI and sex counts. Results are
-   saved to `outputs/`.
-
-**Case review**: open single cases to verify the filters and record a verdict | ready |
-| Simulation and evaluation | later |
-
-## Start
-
-Double-click the start file for your system:
-
-| System | File |
-|---|---|
-| Windows | `start-windows.bat` |
-| macOS | `start-macos.command` |
-| Linux | `start-linux.sh` |
-
-The first start installs everything it needs, including Python, and takes a few
-minutes (internet required). Later starts take seconds. The app opens in your browser
-and is reachable from this computer only. Close the black window to stop it.
+1. **Data**: place the MIMIC files in `data/` (layout shown below and in the app).
+2. **Cohorts & cases**: choose which ED visits to study (age, sex, admission, ICD codes,
+   ESI, one visit per patient), see the cohort flow, review single cases, then build
+   **case files**: what the nurse sees at arrival, what the patient knows (the HPI with
+   ED course, imaging, results and treatment removed; history; home medications) and
+   the reference answers (nurse ESI, disposition, head-injury label).
+3. **Models**: download models from the Ollama library or GGUF files from Hugging Face
+   (with your token for gated models), and test them.
+4. **New experiment**: start from a preset and adjust each agent's model, prompt and what
+   it may read. Prompts can only use fields the agent is allowed to see; the nurse and
+   patient can never see the answers.
+5. **Runs & results**: watch conversations live, stop and resume, then see agreement,
+   under- and over-triage, head-injury under-triage, evaluator scores and per-persona results, with 95% Wilson intervals, paired McNemar comparisons
+   between runs and a plain-language summary written by a model.
 
 ## Data
 
-MIMIC data requires credentialed access on PhysioNet and signed data use agreements.
-Put these four files in the `data` folder of TriageSim, exactly like this
-(the app creates the empty `hosp` and `ed` folders on first start):
+MIMIC requires credentialed PhysioNet access and signed data use agreements.
 
 ```
 TriageSim/data/
-├── ed/
-│   ├── edstays.csv.gz
-│   ├── triage.csv.gz
-│   └── diagnosis.csv.gz
-└── hosp/
-    └── patients.csv.gz
+├── ed/          edstays, triage, diagnosis, medrecon (.csv.gz)   MIMIC-IV-ED v2.2
+├── hosp/        patients, diagnoses_icd (.csv.gz)                MIMIC-IV v3.1
+└── note/        discharge.csv.gz                                 MIMIC-IV-Note v2.2
 ```
 
-| File | PhysioNet project |
+`hosp/diagnoses_icd` is optional (head-injury label). `data/`, `outputs/` and `demo/`
+are never committed to git.
+
+## Experiment presets (`configs/experiments/`)
+
+| Preset | What happens |
 |---|---|
-| `hosp/patients.csv.gz` | [MIMIC-IV v3.1](https://physionet.org/content/mimiciv/3.1/) |
-| `ed/edstays.csv.gz`, `ed/triage.csv.gz`, `ed/diagnosis.csv.gz` | [MIMIC-IV-ED v2.2](https://physionet.org/content/mimic-iv-ed/2.2/) |
+| `interview` | The nurse interviews an open, cooperative patient |
+| `interview_personas` | The patient gets a persona per case (stoic, anxious, confused, cooperative) |
+| `retrieval_patient` | The patient may only answer from retrieved passages of its record |
+| `chart_review` | The nurse reads the chart and decides, no conversation |
+| `multiple_choice` | The same information as a board-style question |
 
-Keep the files compressed and do not rename them. If a file is in the wrong place, the
-app tells you where it found it and where to move it. `data/` and `outputs/` are
-never committed to git.
+Defaults: nurse and evaluator `qwen2.5:32b` (temperature 0), patient `llama3.1:8b`
+(temperature 0.7), seed 42, 12-question limit, 20 random cases.
 
-## Use
-
-**Cohort builder** (menu on the left)
-
-1. **Data**: choose your data folder; every file should show a green tick.
-2. **Filters**: start from a preset or set your own. The filters that will run are
-   listed in plain words above the Build button.
-3. **Build**: see the cohort flow; results are saved to `outputs/`.
-
-**Case review** shows patient-level data, on this computer only.
-
-- Pick a saved cohort. The app rebuilds it from its settings and confirms it gets
-  exactly the same cases.
-- Draw a random sample of included cases, or of cases removed by a specific filter.
-  The same sample number always gives the same cases.
-- Each case shows its facts (age calculation, ESI, admission), all its ED diagnoses with
-  the matching codes ticked, and all ED visits of that patient with the reason each
-  one was kept or removed.
-- Record a verdict (correct, incorrect, unsure) and a note. Verdicts are saved in the
-  run's folder as `review.csv`.
-
-Command line (optional, for scripting):
+## Cluster (command line)
 
 ```bash
-uv run triagesim cohort check
 uv run triagesim cohort build --settings configs/cohorts/elderly_falls.yaml
+uv run triagesim cases build --cohort outputs/cohorts/<cohort folder>
+uv run triagesim models pull --experiment configs/experiments/interview.yaml
+uv run triagesim run --experiment configs/experiments/interview.yaml
+uv run triagesim run --resume outputs/runs/<run folder>
 ```
 
-## Filters
+An experiment designed in the app can be downloaded as YAML ("Download YAML") and run
+the same way. A run stops cleanly at a Slurm time limit and can be resumed.
 
-Applied in this order; each one is optional.
+## Outputs
 
-| Filter | Options |
-|---|---|
-| Age at the ED visit | minimum, maximum |
-| Sex | F, M |
-| Hospital admission | any, admitted only, not admitted only |
-| ICD codes in the ED diagnoses | ICD-10 and ICD-9 prefixes (`S06`) or ranges (`W00-W19`) |
-| Triage acuity | require an ESI value; choose ESI levels 1-5 |
-| One visit per patient | keep the first qualifying visit |
+```
+outputs/cohorts/<name>_<time>/  cohort.csv, settings.yaml, report.json,
+                                cases.jsonl, cases_report.json, review.csv
+outputs/runs/<name>_<time>/     experiment.yaml, plan.json, status.json,
+                                events.jsonl (live log), results.jsonl
+```
 
-Age at the visit is `anchor_age + (year of ED arrival − anchor_year)`. MIMIC reports
-ages above 89 as 91. ICD codes are matched without dots, as MIMIC stores them.
-
-## Output
-
-Each build creates `outputs/<name>_<timestamp>/`:
-
-| File | Contents | Share? |
-|---|---|---|
-| `cohort.csv` | one row per ED stay | **No**: patient data |
-| `settings.yaml` | the filters used; rerun with `build --settings` | yes |
-| `report.json` | cohort flow, ESI and sex distribution | yes |
-| `review.csv` | your case review verdicts (if any) | **No**: contains stay ids |
-
-## Presets
-
-`configs/cohorts/elderly_falls.yaml`: patients 65 or older, admitted through the ED with a
-fall code (ICD-10 W00-W19, ICD-9 E880-E888), ESI recorded, first visit per patient.
+Files containing patient-level data (`cohort.csv`, `cases.jsonl`, `review.csv`,
+`events.jsonl`, `results.jsonl`) must not be shared.
 
 ## Development
 
 ```bash
-uv run --extra dev pytest          # tests use small invented tables, no real data
+uv run --extra dev pytest          # tests use invented data only
+uv run triagesim ui --demo --no-browser &   # then, with Playwright installed:
+python scripts/browser_test.py http://127.0.0.1:8765   # clicks through the whole app
+cd frontend && npm install && npm run build   # rebuilds src/triagesim/web/
 ```
 
-Layout:
-
-```
-src/triagesim/
-  cli.py            command line and the app launcher
-  paths.py          fixed folders: data/, outputs/, configs/
-  cohort/           icd.py, settings.py, sources.py, build.py, review.py
-  ui/               app.py (menu), common.py, pages/ (home, cohort_builder, case_review)
-configs/            filter presets
-tests/              invented test data only
-docs/DECISIONS.md   design decisions
-```
+Layout: `src/triagesim/` with `cohort/` (filters, review), `cases/` (case files,
+redaction), `llm/` (Ollama, Hugging Face, demo model), `experiment/` (config, agents,
+LangGraph engine, runs), `results/` (metrics, summary), `server/` (FastAPI) and `web/`
+(built front end); `frontend/` (React source); `configs/`; `tests/`; `docs/DECISIONS.md`.

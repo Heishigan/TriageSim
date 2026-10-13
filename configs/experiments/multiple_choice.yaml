@@ -1,7 +1,7 @@
 name: multiple_choice
 description: The same information as a board-style multiple-choice question.
 cohort: elderly_falls
-ollama_url: http://localhost:11434
+ollama_url: http://127.0.0.1:11434
 sampling:
   cases: 20
   order: random
@@ -40,5 +40,3 @@ nurse:
     5 - Needs no resources.
   opening_message: Hello, I'm the triage nurse. What brings you in today?
   max_turns: 12
-  self_review:
-    enabled: true

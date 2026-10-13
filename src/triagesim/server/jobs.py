@@ -8,6 +8,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Callable
 
+from ..logs import log
+
 
 @dataclass
 class Job:
@@ -42,6 +44,7 @@ class JobManager:
             except Exception as exc:  # report, never crash the server
                 job.state, job.error = "failed", f"{exc}"
                 job.progress["trace"] = traceback.format_exc(limit=3)
+                log.error("%s '%s' failed: %s\n%s", kind, label, exc, traceback.format_exc(limit=6))
 
         with self._lock:
             self._jobs[job.id] = job

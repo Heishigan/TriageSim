@@ -108,11 +108,11 @@ EVERYTHING = ["age", "sex", "chief_complaint", "arrival_transport", "vitals", "h
               "past_medical_history", "social_history", "allergies", "medications"]
 
 
-def nurse(mode, prompt, sees, self_review=True):
+def nurse(mode, prompt, sees):
     return {"mode": mode, "model": {"name": QWEN, "temperature": 0.0, "seed": 42},
             "sees": sees, "system_prompt": prompt,
             "opening_message": "Hello, I'm the triage nurse. What brings you in today?",
-            "max_turns": 12, "self_review": {"enabled": self_review}}
+            "max_turns": 12}
 
 
 def patient(persona="neutral", mode="llm"):
@@ -170,7 +170,7 @@ def literal(obj):
 
 for name, (description, parts) in PRESETS.items():
     config = {"name": name, "description": description, "cohort": "elderly_falls",
-              "ollama_url": "http://localhost:11434",
+              "ollama_url": "http://127.0.0.1:11434",
               "sampling": {"cases": 20, "order": "random", "seed": 42}, **parts}
     (out / f"{name}.yaml").write_text(yaml.safe_dump(literal(config), sort_keys=False, allow_unicode=True,
                                                      width=100), encoding="utf-8")

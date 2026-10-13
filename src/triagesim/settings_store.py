@@ -9,7 +9,7 @@ import json
 import os
 from pathlib import Path
 
-DEFAULTS = {"ollama_url": "http://localhost:11434", "hf_token": ""}
+DEFAULTS = {"ollama_url": "http://127.0.0.1:11434", "hf_token": ""}
 
 
 def _file() -> Path:

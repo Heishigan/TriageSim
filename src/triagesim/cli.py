@@ -125,7 +125,7 @@ def _run(args) -> int:
     def show(event):
         if event["type"] == "case_done":
             st = read_status(run_dir)
-            print(f"[{st.get('done', 0) + 1}/{total}] {event['case_id']}: ESI {event['esi_final']} "
+            print(f"[{st.get('done', 0) + 1}/{total}] {event['case_id']}: ESI {event['esi']} "
                   f"(reference {event['reference_esi']}), {event['questions']} questions", flush=True)
     try:
         status = execute(run_dir, stop=stop, on_event=show)
@@ -138,18 +138,29 @@ def _run(args) -> int:
     return 0 if status.get("state") == "completed" else 1
 
 
-def _free_port() -> int:
+DEFAULT_PORT = 8765
+
+
+def _free_port(preferred: int | None = DEFAULT_PORT) -> int:
+    """The preferred port if it is free (stable address between restarts), else any free one."""
+    if preferred:
+        with socket.socket() as sock:
+            try:
+                sock.bind(("127.0.0.1", preferred))
+                return preferred
+            except OSError:
+                pass
     with socket.socket() as sock:
-        sock.bind(("localhost", 0))
+        sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
 
 
-def _wait_until_ready(url: str, proc: subprocess.Popen, timeout: float = 60) -> bool:
+def _wait_until_ready(url: str, proc: subprocess.Popen, timeout: float = 90) -> bool:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # never via a proxy
     deadline = time.time() + timeout
     while time.time() < deadline and proc.poll() is None:
         try:
-            opener.open(f"{url}/_stcore/health", timeout=1)
+            opener.open(f"{url}/api/ping", timeout=10)
             return True
         except OSError:
             time.sleep(0.5)
@@ -157,20 +168,30 @@ def _wait_until_ready(url: str, proc: subprocess.Popen, timeout: float = 60) -> 
 
 
 def _ui(args) -> int:
-    app = Path(__file__).parent / "ui" / "app.py"
-    port = _free_port()
-    url = f"http://localhost:{port}"
-    proc = subprocess.Popen([
-        sys.executable, "-m", "streamlit", "run", str(app),
-        "--server.address", "localhost",          # reachable from this computer only
-        "--server.port", str(port),
-        "--server.headless", "true",              # no first-run prompt; we open the browser
-        "--browser.gatherUsageStats", "false",    # no telemetry
-        "--server.fileWatcherType", "none",
-    ])
+    """Start the local server (localhost only) and open the app in the browser."""
+    import os
+    if args.demo:   # invented data in demo/, never the real data/ and outputs/
+        from .demo_data import make_demo_data
+        demo = paths.REPO_ROOT / "demo"
+        if not (demo / "data/hosp/patients.csv.gz").is_file():
+            make_demo_data(demo / "data")
+        os.environ["TRIAGESIM_DATA_DIR"] = str(demo / "data")
+        os.environ["TRIAGESIM_OUTPUT_DIR"] = str(demo / "outputs")
+        os.environ["TRIAGESIM_DEMO"] = "1"
+        print("DEMO MODE: invented data, no real patients.", flush=True)
+    port = args.port or _free_port()
+    url = f"http://127.0.0.1:{port}"
+    print("Starting TriageSim...", flush=True)
+    proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "triagesim.server.app:app",
+                             "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"])
     if not _wait_until_ready(url, proc):
-        print("The app did not start. See the messages above.")
-        proc.terminate()
+        if proc.poll() is None:
+            print(f"The app did not answer at {url} within 90 seconds.")
+            proc.terminate()
+        else:
+            print(f"The app stopped with exit code {proc.returncode}. See the messages above.")
+        print("To see the full error, run in this folder:\n"
+              f"  uv run python -m uvicorn triagesim.server.app:app --port {port}")
         return 1
     print(f"\nTriageSim is running at {url}", flush=True)
     print("Close this window to stop it.\n", flush=True)
@@ -189,6 +210,8 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("ui", help="open the app in the browser")
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
+    p.add_argument("--port", type=int, default=None, help=f"port (default {DEFAULT_PORT}, or a free one if taken)")
+    p.add_argument("--demo", action="store_true", help="use invented demo data (demo/) instead of data/")
     p.set_defaults(func=_ui)
 
     cohort = sub.add_parser("cohort", help="cohort builder").add_subparsers(dest="action", required=True)

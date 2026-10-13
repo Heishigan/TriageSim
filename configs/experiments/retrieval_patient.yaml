@@ -1,7 +1,7 @@
 name: retrieval_patient
 description: Nurse interviews a patient who can only answer from retrieved passages of the record.
 cohort: elderly_falls
-ollama_url: http://localhost:11434
+ollama_url: http://127.0.0.1:11434
 sampling:
   cases: 20
   order: random

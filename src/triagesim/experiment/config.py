@@ -97,7 +97,7 @@ class ExperimentConfig(Strict):
     name: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
     description: str = ""
     cohort: str = Field(description="Folder name of a saved cohort with case files")
-    ollama_url: str = "http://localhost:11434"
+    ollama_url: str = "http://127.0.0.1:11434"
     sampling: Sampling = Sampling()
     nurse: Nurse
     patient: Patient | None = None

@@ -42,8 +42,9 @@ _tables_lock = threading.Lock()
 
 
 # ---- helpers ------------------------------------------------------------------------
-def _ollama() -> OllamaClient:
-    return OllamaClient(settings_store.load()["ollama_url"])
+def _ollama(quick: bool = False) -> OllamaClient:
+    """Ollama client. ``quick`` = short timeout, for status checks that must not hang."""
+    return OllamaClient(settings_store.load()["ollama_url"], timeout=3.0 if quick else 600.0)
 
 
 def _cached_tables(purposes: tuple[str, ...], skip: tuple[str, ...] = ()) -> dict[str, pd.DataFrame]:
@@ -86,10 +87,16 @@ def _validation_errors(exc: ValidationError) -> list[str]:
 
 
 # ---- system -------------------------------------------------------------------------
+@app.get("/api/ping")
+def ping() -> dict:
+    """Answers immediately; used by the launcher to know the app is up."""
+    return {"ok": True}
+
+
 @app.get("/api/health")
 def health() -> dict:
     try:
-        ollama = {"reachable": True, "version": _ollama().version()}
+        ollama = {"reachable": True, "version": _ollama(quick=True).version()}
     except ModelError as exc:
         ollama = {"reachable": False, "error": str(exc)}
     return {"version": __version__, "ollama": ollama, "settings": settings_store.public(settings_store.load())}
@@ -274,7 +281,7 @@ def save_verdict(name: str, body: VerdictIn) -> dict:
 @app.get("/api/models")
 def installed_models() -> dict:
     try:
-        return {"reachable": True, "models": _ollama().list_models(),
+        return {"reachable": True, "models": _ollama(quick=True).list_models(),
                 "downloads": [j.public() for j in jobs.all() if j.kind == "model"]}
     except ModelError as exc:
         return {"reachable": False, "error": str(exc), "models": [],

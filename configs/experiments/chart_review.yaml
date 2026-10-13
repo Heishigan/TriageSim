@@ -1,7 +1,7 @@
 name: chart_review
 description: Nurse reads the chart and decides, without talking to the patient.
 cohort: elderly_falls
-ollama_url: http://localhost:11434
+ollama_url: http://127.0.0.1:11434
 sampling:
   cases: 20
   order: random

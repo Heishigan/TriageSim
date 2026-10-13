@@ -170,7 +170,7 @@ def literal(obj):
 
 for name, (description, parts) in PRESETS.items():
     config = {"name": name, "description": description, "cohort": "elderly_falls",
-              "ollama_url": "http://localhost:11434",
+              "ollama_url": "http://127.0.0.1:11434",
               "sampling": {"cases": 20, "order": "random", "seed": 42}, **parts}
     (out / f"{name}.yaml").write_text(yaml.safe_dump(literal(config), sort_keys=False, allow_unicode=True,
                                                      width=100), encoding="utf-8")

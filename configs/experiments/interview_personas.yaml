@@ -1,7 +1,7 @@
 name: interview_personas
 description: Nurse interviews a patient with a randomly drawn persona per case.
 cohort: elderly_falls
-ollama_url: http://localhost:11434
+ollama_url: http://127.0.0.1:11434
 sampling:
   cases: 20
   order: random

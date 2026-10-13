@@ -168,3 +168,8 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
 - D52. Verified end to end in Chromium (Playwright) with invented data and the demo model:
   cohort, cases, case review, experiment, live run, results, summary, transcript, models;
   no console errors.
+- D53. Windows launch fix: the launcher checked /api/health, which also asked Ollama; with
+  Ollama stopped, Windows takes ~2 s per refused connection (and tried IPv6 then IPv4),
+  so every check timed out and the app was reported as not started. Now: /api/ping for
+  readiness (answers immediately), status checks use a 3 s Ollama timeout, Ollama and
+  the app are addressed as 127.0.0.1, and a failed start says why and how to see the error.

@@ -113,7 +113,7 @@ def test_review_through_api(api):
 
 def test_settings_mask_the_token(api):
     out = api.put("/api/settings", json={"hf_token": "hf_abcdefghijklmnop"}).json()
-    assert out == {"ollama_url": "http://localhost:11434", "hf_token_set": True, "hf_token_hint": "hf_...mnop"}
+    assert out == {"ollama_url": "http://127.0.0.1:11434", "hf_token_set": True, "hf_token_hint": "hf_...mnop"}
     assert "abcdefgh" not in json.dumps(api.get("/api/health").json())
 
 
@@ -126,3 +126,18 @@ def test_presets_come_with_defaults_filled_in(api):
     preset = next(p for p in api.get("/api/experiment-presets").json() if p["name"] == "interview")
     assert "review the conversation" in preset["config"]["nurse"]["self_review"]["prompt"]
     assert preset["config"]["patient"]["retrieval_top_k"] == 3
+
+
+def test_ping_does_not_wait_for_a_slow_ollama(api, monkeypatch):
+    """On Windows a stopped Ollama can take seconds to refuse; the launcher must not wait for it."""
+    from triagesim.llm.ollama import OllamaClient
+    monkeypatch.setattr(OllamaClient, "version", lambda self: time.sleep(5))
+    start = time.time()
+    assert api.get("/api/ping").json() == {"ok": True}
+    assert time.time() - start < 1
+
+
+def test_status_checks_use_a_short_timeout():
+    from triagesim.server.app import _ollama
+    assert _ollama(quick=True)._http.timeout.connect == 3.0
+    assert _ollama()._http.timeout.connect == 600.0

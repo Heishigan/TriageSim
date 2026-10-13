@@ -17,7 +17,7 @@ import httpx
 
 from .base import ChatResult, Message, ModelError
 
-DEFAULT_URL = "http://localhost:11434"
+DEFAULT_URL = "http://127.0.0.1:11434"
 Progress = Callable[[dict], None]   # receives {"status": str, "completed": int, "total": int}
 
 

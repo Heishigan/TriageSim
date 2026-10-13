@@ -144,12 +144,12 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
-def _wait_until_ready(url: str, proc: subprocess.Popen, timeout: float = 60) -> bool:
+def _wait_until_ready(url: str, proc: subprocess.Popen, timeout: float = 90) -> bool:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # never via a proxy
     deadline = time.time() + timeout
     while time.time() < deadline and proc.poll() is None:
         try:
-            opener.open(f"{url}/api/health", timeout=2)
+            opener.open(f"{url}/api/ping", timeout=10)
             return True
         except OSError:
             time.sleep(0.5)
@@ -168,12 +168,18 @@ def _ui(args) -> int:
         os.environ["TRIAGESIM_OUTPUT_DIR"] = str(demo / "outputs")
         print("DEMO MODE: invented data, no real patients.", flush=True)
     port = args.port or _free_port()
-    url = f"http://localhost:{port}"
+    url = f"http://127.0.0.1:{port}"
+    print("Starting TriageSim...", flush=True)
     proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "triagesim.server.app:app",
                              "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"])
     if not _wait_until_ready(url, proc):
-        print("The app did not start. See the messages above.")
-        proc.terminate()
+        if proc.poll() is None:
+            print(f"The app did not answer at {url} within 90 seconds.")
+            proc.terminate()
+        else:
+            print(f"The app stopped with exit code {proc.returncode}. See the messages above.")
+        print("To see the full error, run in this folder:\n"
+              f"  uv run python -m uvicorn triagesim.server.app:app --port {port}")
         return 1
     print(f"\nTriageSim is running at {url}", flush=True)
     print("Close this window to stop it.\n", flush=True)

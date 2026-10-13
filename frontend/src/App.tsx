@@ -1,5 +1,6 @@
 import { NavLink, Route, Routes } from "react-router-dom";
 import { useApi } from "./api";
+import { OllamaAction, type OllamaStatus } from "./components/ollama";
 import Home from "./pages/Home";
 import Data from "./pages/Data";
 import Cohorts from "./pages/Cohorts";
@@ -17,10 +18,10 @@ const STEPS = [
   { to: "/runs", label: "Runs & results", n: 5 },
 ];
 
-type Health = { version: string; demo: boolean; ollama: { reachable: boolean; installed: boolean; version?: string } };
+type Health = { version: string; demo: boolean; ollama: OllamaStatus };
 
 export default function App() {
-  const { data: health } = useApi<Health>("/health", 10000);
+  const { data: health, reload } = useApi<Health>("/health", 4000);
   return (
     <div className="flex min-h-screen">
       <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col bg-slate-900 text-slate-300">
@@ -45,6 +46,7 @@ export default function App() {
             {health?.ollama.reachable ? `Ollama ${health.ollama.version}`
               : <NavLink to="/models" className="underline">{health?.ollama.installed ? "Ollama not running" : "Ollama not installed"}</NavLink>}
           </div>
+          {health && <OllamaAction status={health.ollama} onChange={reload} compact />}
           <div className="mt-1 text-slate-500">Version {health?.version ?? "…"} · runs on this computer</div>
         </div>
       </aside>

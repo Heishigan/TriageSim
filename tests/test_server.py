@@ -146,8 +146,8 @@ def test_status_checks_use_a_short_timeout():
 def test_health_reports_whether_ollama_is_installed(api, monkeypatch):
     import triagesim.server.app as server
     monkeypatch.setattr(server, "find_ollama", lambda: None)
-    assert api.get("/api/health").json()["ollama"] == {
-        "reachable": False, "error": api.get("/api/health").json()["ollama"]["error"], "installed": False}
+    ollama = api.get("/api/health").json()["ollama"]
+    assert ollama["reachable"] is False and ollama["installed"] is False and ollama["installing"] is False
     assert api.post("/api/ollama/start").status_code == 404
 
 
@@ -187,3 +187,19 @@ def test_cloud_models_are_rejected(api):
     config["nurse"]["model"]["name"] = "gpt-oss:120b-cloud"
     out = api.post("/api/experiments/validate", json=config).json()
     assert not out["valid"] and any("cloud model" in e for e in out["errors"])
+
+
+def test_install_outside_windows_returns_the_command(api, monkeypatch):
+    import sys
+    monkeypatch.setattr(sys, "platform", "linux")
+    r = api.post("/api/ollama/install")
+    assert r.status_code == 400 and "install.sh" in r.json()["detail"]
+
+
+def test_terminal_log_tells_the_story(api, capsys):
+    preset = next(p for p in api.get("/api/cohort-presets").json() if p["name"] == "elderly_falls")
+    name = api.post("/api/cohorts", json=preset["settings"]).json()["name"]
+    wait_job(api, api.post(f"/api/cohorts/{name}/cases").json()["id"])
+    out = capsys.readouterr().out
+    assert "Building cohort 'elderly_falls'" in out and "First qualifying visit per patient" in out
+    assert "Cohort saved" in out and "Case files saved" in out

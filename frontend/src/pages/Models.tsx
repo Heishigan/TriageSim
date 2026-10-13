@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { type Job, post, put, useApi } from "../api";
 import { Alert, Badge, Button, Card, Field, Page, Progress, Spinner, Table, inputClass } from "../components/ui";
+import { OllamaAction, type OllamaStatus } from "../components/ollama";
 
 type ModelList = { reachable: boolean; error?: string; models: { name: string; size: number; modified: string }[]; downloads: Job[] };
-type Health = { ollama: { reachable: boolean; installed: boolean; version?: string };
+type Health = { ollama: OllamaStatus;
   settings: { ollama_url: string; hf_token_set: boolean; hf_token_hint: string } };
 
 const gb = (b: number) => `${(b / 1e9).toFixed(1)} GB`;
@@ -13,12 +14,12 @@ type Catalog = { tiers: Record<string, string>; models: CatalogModel[]; gpus: { 
 
 export default function Models() {
   const models = useApi<ModelList>("/models", 2000);
-  const health = useApi<Health>("/health");
+  const health = useApi<Health>("/health", 4000);
   return (
     <Page title="3. Models" subtitle="Models run locally in Ollama. Download them from the Ollama library or from Hugging Face (GGUF files, with your token for gated models).">
       <Settings health={health.data} onSaved={() => { health.reload(); models.reload(); }} />
       {models.data && !models.data.reachable && health.data && (
-        <OllamaMissing installed={health.data.ollama.installed} onStarted={() => { health.reload(); models.reload(); }} />)}
+        <OllamaMissing status={health.data.ollama} onChange={() => { health.reload(); models.reload(); }} />)}
       <CatalogCard />
       <Download />
       {!!models.data?.downloads.length && (
@@ -41,28 +42,15 @@ export default function Models() {
   );
 }
 
-function OllamaMissing({ installed, onStarted }: { installed: boolean; onStarted: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const start = async () => {
-    setBusy(true); setError(null);
-    try { await post("/ollama/start"); onStarted(); } catch (e) { setError((e as Error).message); }
-    setBusy(false);
-  };
+function OllamaMissing({ status, onChange }: { status: OllamaStatus; onChange: () => void }) {
   return (
-    <Card title={installed ? "Ollama is installed but not running" : "Ollama is not installed"}>
+    <Card title={status.installed ? "Ollama is installed but not running" : "Ollama is not installed"}>
       <div className="space-y-3 text-sm">
-        {installed ? (
-          <div className="flex items-center gap-3"><Button variant="primary" disabled={busy} onClick={start}>
-            {busy ? <span className="flex items-center gap-2"><Spinner /> Starting…</span> : "Start Ollama"}</Button>
-            <span className="text-slate-500">or open the Ollama app from the Start menu.</span></div>
-        ) : (
-          <p>TriageSim runs models through Ollama, a free program. <a className="font-medium text-brand-600 hover:underline"
-            href="https://ollama.com/download" target="_blank" rel="noreferrer">Download Ollama</a>, install it, then come back
-            to this page. It starts by itself after installing.</p>
-        )}
+        <p>TriageSim runs models through <a className="font-medium text-brand-600 hover:underline" href="https://ollama.com/download"
+          target="_blank" rel="noreferrer">Ollama</a>, a free program that keeps everything on this computer.
+          {!status.installed && status.platform === "windows" && " One click downloads the official installer from ollama.com and runs it (no administrator rights needed)."}</p>
+        <OllamaAction status={status} onChange={onChange} />
         <p className="text-slate-500">Without Ollama you can still try the whole app: in New experiment, set each agent's model source to <b>Demo</b>.</p>
-        {error && <Alert kind="error">{error}</Alert>}
       </div>
     </Card>
   );
@@ -79,12 +67,13 @@ function Settings({ health, onSaved }: { health: Health | null; onSaved: () => v
   };
   return (
     <Card title="Connection">
-      <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
-        <Field label="Ollama address"><input className={inputClass} value={url ?? health.settings.ollama_url} onChange={(e) => setUrl(e.target.value)} /></Field>
+      <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-start">
+        <Field label="Ollama address" hint="Where Ollama runs. The default is right for most computers.">
+          <input className={inputClass} value={url ?? health.settings.ollama_url} onChange={(e) => setUrl(e.target.value)} /></Field>
         <Field label="Hugging Face token" hint={health.settings.hf_token_set ? `Saved (${health.settings.hf_token_hint}). Stored only on this computer.` : "Only needed for gated or private models. Stored only on this computer."}>
           <input type="password" className={inputClass} placeholder="hf_..." value={token} onChange={(e) => setToken(e.target.value)} />
         </Field>
-        <Button variant="primary" onClick={save}>{saved ? "Saved" : "Save"}</Button>
+        <div className="md:pt-6"><Button variant="primary" onClick={save}>{saved ? "Saved" : "Save"}</Button></div>
       </div>
     </Card>
   );

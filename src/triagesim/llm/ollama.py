@@ -138,6 +138,39 @@ def detect_gpus() -> list[dict]:
     return gpus
 
 
+OLLAMA_WINDOWS_INSTALLER = "https://ollama.com/download/OllamaSetup.exe"
+INSTALL_HELP = {
+    "linux": "curl -fsSL https://ollama.com/install.sh | sh",
+    "darwin": "Download the app from https://ollama.com/download/mac (or: brew install ollama)",
+}
+
+
+def install_ollama_windows(progress: Progress | None = None, client: httpx.Client | None = None) -> None:
+    """Download the official Ollama installer and run it (per-user install, no admin rights).
+
+    The installer shows its own small progress window and starts Ollama when it finishes.
+    """
+    import subprocess
+    import tempfile
+    target = Path(tempfile.gettempdir()) / "OllamaSetup.exe"
+    http = client or httpx.Client(timeout=None)
+    with http.stream("GET", OLLAMA_WINDOWS_INSTALLER, follow_redirects=True) as r:
+        if r.status_code != 200:
+            raise ModelError(f"Could not download the Ollama installer ({r.status_code}).")
+        total, done = int(r.headers.get("content-length", 0)), 0
+        with open(target, "wb") as f:
+            for chunk in r.iter_bytes(1 << 20):
+                f.write(chunk)
+                done += len(chunk)
+                if progress:
+                    progress({"status": "downloading the Ollama installer", "completed": done, "total": total})
+    if progress:
+        progress({"status": "installing Ollama (follow its window)", "completed": 0, "total": 0})
+    result = subprocess.run([str(target), "/SILENT", "/NORESTART"], check=False)
+    if result.returncode != 0:
+        raise ModelError(f"The Ollama installer stopped with code {result.returncode}.")
+
+
 def find_ollama() -> str | None:
     """Path of the Ollama program if it is installed, else None."""
     import os

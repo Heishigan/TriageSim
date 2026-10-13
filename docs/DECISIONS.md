@@ -185,3 +185,11 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   run on Ollama's servers, and MIMIC data must not leave the machine (PhysioNet guidance).
 - D57. 'Open the data folder' uses explorer.exe on Windows and reports the result;
   'Build case files' names the missing files; a DEMO badge shows when on invented data.
+- D58. Terminal log (like ComfyUI): startup summary (folders, which data groups are ready,
+  Ollama status) and timestamped lines for cohort builds (filters and flow), note reading,
+  case files, model downloads (every 10%), each finished case, run state changes and any
+  error with its traceback. Polling requests are not logged.
+- D59. One-click Ollama install on Windows: downloads the official OllamaSetup.exe from
+  ollama.com and runs it (per-user, no admin rights; it starts Ollama when done). On
+  Linux/macOS the app shows the official install command. Install/Start also in the
+  sidebar status.

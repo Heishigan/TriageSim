@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
 from .. import __version__, paths, settings_store
+from ..logs import Throttle, configure as configure_logging, log
 from ..cases.build import CaseSettings, build_cases, load_cases, read_discharge_notes, save_cases
 from ..cohort import review as cohort_review
 from ..cohort.build import build_cohort, save_result
@@ -29,13 +30,40 @@ from ..experiment.fields import FIELDS
 from ..experiment.runner import create_run, execute, list_runs, read_results, read_status
 from ..llm.base import ModelError
 from ..llm.demo import DemoModel
-from ..llm.ollama import OllamaClient, OllamaModel, detect_gpus, ensure_model, find_ollama, start_ollama
+from ..llm.ollama import (INSTALL_HELP, OllamaClient, OllamaModel, detect_gpus, ensure_model, find_ollama,
+                          install_ollama_windows, start_ollama)
 from ..results.metrics import compare_runs, run_metrics
 from ..results.summary import summarize_metrics
 from .jobs import JobManager
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
-app = FastAPI(title="TriageSim", version=__version__)
+configure_logging()
+
+
+def _startup_banner() -> None:
+    import os
+    log.info("TriageSim %s%s", __version__, "  [DEMO MODE: invented data]" if os.environ.get("TRIAGESIM_DEMO") == "1" else "")
+    log.info("Data folder:    %s", paths.data_dir())
+    log.info("Output folder:  %s", paths.output_dir())
+    for purpose, label in PURPOSES.items():
+        missing = [c.table.relative_path for c in check_data(paths.data_dir(), (purpose,)) if not c.ok]
+        log.info("%-16s %s", label + ":", "ready" if not missing else "missing " + ", ".join(missing))
+    try:
+        log.info("Ollama:         %s at %s", _ollama(quick=True).version(), settings_store.load()["ollama_url"])
+    except ModelError:
+        log.warning("Ollama:         not reachable (%s)", "installed but stopped" if find_ollama() else "not installed")
+
+
+from contextlib import asynccontextmanager  # noqa: E402
+
+
+@asynccontextmanager
+async def _lifespan(_app):
+    _startup_banner()
+    yield
+
+
+app = FastAPI(title="TriageSim", version=__version__, lifespan=_lifespan)
 jobs = JobManager()
 _tables_cache: dict[tuple, dict] = {}
 _tables_lock = threading.Lock()
@@ -101,8 +129,43 @@ def health() -> dict:
         ollama = {"reachable": False, "error": str(exc)}
     ollama["installed"] = ollama["reachable"] or find_ollama() is not None
     import os
+    import sys
+    ollama["platform"] = "windows" if sys.platform.startswith("win") else sys.platform
+    ollama["install_command"] = INSTALL_HELP.get(sys.platform)
+    ollama["installing"] = bool(jobs.running("ollama-install"))
     return {"version": __version__, "ollama": ollama, "demo": os.environ.get("TRIAGESIM_DEMO") == "1",
             "settings": settings_store.public(settings_store.load())}
+
+
+@app.post("/api/ollama/install")
+def ollama_install() -> dict:
+    """One-click install on Windows; elsewhere the command to run is returned in /api/health."""
+    import sys
+    if not sys.platform.startswith("win"):
+        raise HTTPException(400, f"Install Ollama with: {INSTALL_HELP.get(sys.platform, 'see https://ollama.com/download')}")
+    if jobs.running("ollama-install"):
+        raise HTTPException(409, "Ollama is already being installed.")
+
+    def work(job):
+        throttle = Throttle("Ollama install", step=20)
+
+        def progress(p):
+            job.progress = p
+            throttle(p)
+        install_ollama_windows(progress)
+        log.info("Ollama installed; waiting for it to start")
+        import time as _time
+        for _ in range(30):
+            try:
+                return {"version": _ollama(quick=True).version()}
+            except ModelError:
+                _time.sleep(1)
+        exe = find_ollama()
+        if exe:
+            start_ollama(exe)
+        return {"version": None}
+    log.info("Installing Ollama (downloading the official installer from ollama.com)")
+    return jobs.start("ollama-install", "Ollama", work).public()
 
 
 @app.post("/api/ollama/start")
@@ -202,11 +265,16 @@ def create_cohort(body: dict) -> dict:
         settings.validate()
     except (TypeError, ValueError) as exc:
         raise HTTPException(422, str(exc))
+    log.info("Building cohort '%s': %s", settings.name, "; ".join(settings.describe()) or "no filters")
     try:
         result = build_cohort(_cached_tables(("cohort",)), settings)
         run_dir = save_result(result, settings, paths.cohorts_dir(), paths.data_dir())
     except DataLoadError as exc:
+        log.error("Cohort build failed: %s", exc)
         raise HTTPException(400, str(exc))
+    for step in result.flow:
+        log.info("  %-40s %9s stays %9s patients", step.step, f"{step.ed_stays:,}", f"{step.patients:,}")
+    log.info("Cohort saved: %s", run_dir.name)
     return {"name": run_dir.name, "filters": settings.describe(), **result.summary()}
 
 
@@ -248,15 +316,27 @@ def start_case_build(name: str) -> dict:
             f"data/{c.table.relative_path} ({c.message})" for c in missing))
 
     def work(job):
+        log.info("Building case files for %s", name)
         job.progress = {"status": "loading tables"}
         tables = _cached_tables(purposes, skip=("discharge",))
         cohort = pd.read_csv(d / "cohort.csv")
         job.progress = {"status": "reading discharge notes", "notes_read": 0}
+        log.info("Reading discharge notes (a few minutes)")
+
+        def notes_progress(n):
+            job.progress.update(notes_read=n)
+            if n % 100_000 < 20_000:
+                log.info("  %s notes read", f"{n:,}")
         notes = read_discharge_notes(paths.data_dir() / "note/discharge.csv.gz", set(cohort["hadm_id"].dropna()),
-                                     progress=lambda n: job.progress.update(notes_read=n))
+                                     progress=notes_progress)
         job.progress = {"status": "building cases"}
         cases, flow = build_cases(cohort, tables, notes, CaseSettings())
-        return save_cases(d, cases, flow, CaseSettings())
+        report = save_cases(d, cases, flow, CaseSettings())
+        for step in flow:
+            log.info("  %-30s %9s", step["step"], f"{step['cases']:,}")
+        log.info("Case files saved: %s cases, %s HPIs changed by redaction", f"{report['cases']:,}",
+                 f"{report['hpi_redacted']:,}")
+        return report
 
     return jobs.start("cases", name, work).public()
 
@@ -354,10 +434,15 @@ def pull_model(body: ModelIn) -> dict:
     settings = settings_store.load()
 
     def work(job):
+        throttle = Throttle(f"Model {body.name}")
+
         def progress(p):
             job.progress = p
-        return {"result": ensure_model(_ollama(), model, settings["hf_token"] or None,
-                                       paths.output_dir() / "models", progress)}
+            throttle(p)
+        result = ensure_model(_ollama(), model, settings["hf_token"] or None, paths.output_dir() / "models", progress)
+        log.info("Model %s: %s", body.name, result)
+        return {"result": result}
+    log.info("Model %s: download requested", body.name)
     return jobs.start("model", body.name, work).public()
 
 
@@ -418,8 +503,20 @@ def experiment_yaml(body: dict):
 
 # ---- runs ---------------------------------------------------------------------------
 def _start_run(run_dir: Path) -> None:
+    def on_event(event):
+        if event["type"] == "case_done":
+            st = read_status(run_dir)
+            log.info("Run %s [%s/%s] %s: agent ESI %s, nurse ESI %s, %s questions", run_dir.name,
+                     st.get("done", 0) + 1, st.get("total"), event["case_id"], event.get("esi_final"),
+                     event.get("reference_esi"), event.get("questions"))
+        elif event["type"] == "run_failed":
+            log.error("Run %s failed: %s", run_dir.name, event.get("error"))
+
     def work(job):
-        return execute(run_dir, stop=job.stop)
+        status = execute(run_dir, stop=job.stop, on_event=on_event)
+        log.info("Run %s: %s (%s/%s cases)", run_dir.name, status.get("state"), status.get("done"), status.get("total"))
+        return status
+    log.info("Run %s: starting", run_dir.name)
     jobs.start("run", run_dir.name, work, job_id=run_dir.name)
 
 
@@ -466,6 +563,7 @@ def stop_run(name: str) -> dict:
     job = jobs.get(name)
     if job and job.state == "running":
         job.stop.set()
+        log.info("Run %s: stop requested", name)
         return {"stopping": True}
     return {"stopping": False}
 

@@ -11,7 +11,7 @@ def test_no_filters_keeps_everything(tables):
 
 
 def test_elderly_falls_preset(tables):
-    result = build_cohort(tables, CohortSettings.from_yaml("configs/elderly_falls.yaml"))
+    result = build_cohort(tables, CohortSettings.from_yaml("configs/cohorts/elderly_falls.yaml"))
     assert sorted(result.cohort["stay_id"]) == [11, 61]
     assert [s.ed_stays for s in result.flow] == [7, 6, 5, 4, 3, 2]
     # Age is shifted to the visit year: subject 6 is 88 in 2150, 90 in 2152.

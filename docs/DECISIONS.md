@@ -119,3 +119,17 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   A CT-report label can be added later.
 - D38. Data files grouped by purpose: cohort (4 files), cases (ed/medrecon,
   note/discharge, extra triage/edstays columns), labels (hosp/diagnoses_icd).
+
+## Phase 2: models and agents
+- D39. Model layer: one ChatModel interface (messages, temperature, seed, optional JSON
+  schema). OllamaClient: chat, list, pull with progress, embeddings. Hugging Face GGUF
+  models are downloaded with the user's HF token (gated/private work) and registered in
+  Ollama via blobs + /api/create. FakeModel for tests. `triagesim models pull`.
+- D40. One YAML per experiment (pydantic, typos are errors). Each agent has a model,
+  a system prompt template and a 'sees' list. A prompt using a field the agent may not
+  see is rejected; nurse and patient can never see reference answers.
+- D41. Five presets, own prompts (not copies of the thesis): interview (neutral patient),
+  interview_personas (random persona per case), retrieval_patient, chart_review,
+  multiple_choice. Nurse sees triage vitals by default (real triage uses them; removable).
+  Self-review is on in every nurse mode, so conditions are comparable. Defaults:
+  nurse/evaluator qwen2.5:32b temperature 0 seed 42; patient llama3.1:8b temperature 0.7 seed 42.

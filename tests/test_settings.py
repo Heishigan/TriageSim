@@ -10,7 +10,7 @@ def test_yaml_round_trip(tmp_path):
 
 
 def test_preset_loads():
-    s = CohortSettings.from_yaml("configs/elderly_falls.yaml")
+    s = CohortSettings.from_yaml("configs/cohorts/elderly_falls.yaml")
     assert s.min_age == 65 and s.admission == "admitted"
 
 

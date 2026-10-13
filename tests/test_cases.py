@@ -9,7 +9,7 @@ from conftest import NOTE_11
 
 
 def cohort(tables):
-    return build_cohort(tables, CohortSettings.from_yaml("configs/elderly_falls.yaml")).cohort
+    return build_cohort(tables, CohortSettings.from_yaml("configs/cohorts/elderly_falls.yaml")).cohort
 
 
 # ---- Sections and redaction ------------------------------------------------------

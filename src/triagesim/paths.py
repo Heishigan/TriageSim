@@ -15,6 +15,8 @@ from pathlib import Path
 # src/triagesim/paths.py -> repository root is two levels above the package.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = REPO_ROOT / "configs"
+COHORT_PRESETS = CONFIG_DIR / "cohorts"
+EXPERIMENT_PRESETS = CONFIG_DIR / "experiments"
 
 
 def data_dir() -> Path:

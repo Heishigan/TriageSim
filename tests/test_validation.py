@@ -92,5 +92,5 @@ def test_cli_reports_bad_settings_without_crashing(data_dir, tmp_path, capsys):
 
 
 def test_cli_reports_missing_data_without_crashing(tmp_path, capsys):
-    assert main(["cohort", "build", "--settings", "configs/elderly_falls.yaml", "--data", str(tmp_path)]) == 1
+    assert main(["cohort", "build", "--settings", "configs/cohorts/elderly_falls.yaml", "--data", str(tmp_path)]) == 1
     assert "Data check failed" in capsys.readouterr().err

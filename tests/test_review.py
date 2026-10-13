@@ -4,12 +4,12 @@ from triagesim.cohort.settings import CohortSettings
 
 
 def saved_run(tables, tmp_path):
-    s = CohortSettings.from_yaml("configs/elderly_falls.yaml")
+    s = CohortSettings.from_yaml("configs/cohorts/elderly_falls.yaml")
     return save_result(build_cohort(tables, s), s, tmp_path)
 
 
 def test_every_excluded_stay_has_one_reason(tables):
-    result = build_cohort(tables, CohortSettings.from_yaml("configs/elderly_falls.yaml"))
+    result = build_cohort(tables, CohortSettings.from_yaml("configs/cohorts/elderly_falls.yaml"))
     ex = result.excluded.set_index("stay_id")["excluded_at"].to_dict()
     assert ex == {21: "Age 65 or older", 31: "Admitted to hospital",
                   41: "ICD code match in ED diagnoses", 51: "Triage acuity (ESI) recorded",

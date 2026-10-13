@@ -125,7 +125,7 @@ def _run(args) -> int:
     def show(event):
         if event["type"] == "case_done":
             st = read_status(run_dir)
-            print(f"[{st.get('done', 0) + 1}/{total}] {event['case_id']}: ESI {event['esi_final']} "
+            print(f"[{st.get('done', 0) + 1}/{total}] {event['case_id']}: ESI {event['esi']} "
                   f"(reference {event['reference_esi']}), {event['questions']} questions", flush=True)
     try:
         status = execute(run_dir, stop=stop, on_event=show)

@@ -520,7 +520,7 @@ def _start_run(run_dir: Path) -> None:
         if event["type"] == "case_done":
             st = read_status(run_dir)
             log.info("Run %s [%s/%s] %s: agent ESI %s, nurse ESI %s, %s questions", run_dir.name,
-                     st.get("done", 0) + 1, st.get("total"), event["case_id"], event.get("esi_final"),
+                     st.get("done", 0) + 1, st.get("total"), event["case_id"], event.get("esi"),
                      event.get("reference_esi"), event.get("questions"))
         elif event["type"] == "run_failed":
             log.error("Run %s failed: %s", run_dir.name, event.get("error"))
@@ -630,7 +630,7 @@ async def run_events(name: str, after: int = 0):
 
 
 def _row(r: dict) -> dict:
-    return {k: r.get(k) for k in ("case_id", "stay_id", "persona", "reference_esi", "esi_initial", "esi_final",
+    return {k: r.get(k) for k in ("case_id", "stay_id", "persona", "reference_esi", "esi",
                                   "head_injury", "decided", "forced", "questions", "seconds", "format_failures")} | {
         "scores": (r.get("evaluation") or {}).get("scores")}
 

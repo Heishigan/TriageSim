@@ -38,14 +38,6 @@ MULTIPLE_CHOICE = {
 }
 MULTIPLE_CHOICE_INSTRUCTIONS = '\n\nReply ONLY with JSON: {"answer": "<A-E>", "reasoning": "<one or two sentences>"}'
 
-SELF_REVIEW = {
-    "type": "object",
-    "properties": {"esi": {"type": "integer", "minimum": 1, "maximum": 5}, "changed": {"type": "boolean"},
-                   "reasoning": {"type": "string"}},
-    "required": ["esi", "changed", "reasoning"],
-}
-SELF_REVIEW_INSTRUCTIONS = ('\n\nReply ONLY with JSON: {"esi": <1-5, your final level>, '
-                            '"changed": <true if different from before>, "reasoning": "<one or two sentences>"}')
 
 EVALUATION = {
     "type": "object",
@@ -119,11 +111,6 @@ def parse_multiple_choice(text: str) -> dict:
     if letter not in LETTER_TO_ESI:
         raise ProtocolError("answer must be one of A-E")
     return {"esi": LETTER_TO_ESI[letter], "answer": letter, "reasoning": str(data.get("reasoning", ""))}
-
-
-def parse_self_review(text: str) -> dict:
-    data = parse_json(text)
-    return {"esi": _esi(data.get("esi")), "reasoning": str(data.get("reasoning", ""))}
 
 
 def parse_evaluation(text: str) -> dict:

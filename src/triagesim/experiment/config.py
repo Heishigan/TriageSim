@@ -71,17 +71,10 @@ class Patient(Agent):
         return self
 
 
-class SelfReview(Strict):
-    enabled: bool = False
-    prompt: str = ("You assigned ESI {decision}. Before this is final, review the conversation. "
-                   "Is anything important unasked or unresolved that should change the score?")
-
-
 class Nurse(Agent):
     mode: Literal["interview", "chart_review", "multiple_choice"] = "interview"
     opening_message: str = "Hello, I'm the triage nurse. What brings you in today?"
     max_turns: int = Field(12, ge=1, le=50)
-    self_review: SelfReview = SelfReview()
 
     @model_validator(mode="after")
     def _no_answers(self):

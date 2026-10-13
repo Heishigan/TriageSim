@@ -1,9 +1,9 @@
 """Run one case through an experiment as a LangGraph graph.
 
 Interview:   open -> patient -> nurse -(ask)-> patient ...
-                                     -(decide)-> self_review -> evaluate -> end
-                                     -(question limit)-> force -> self_review ...
-Chart review / multiple choice:  read_chart -> self_review -> evaluate -> end
+                                     -(decide)-> evaluate -> end
+                                     -(question limit)-> force -> evaluate -> end
+Chart review / multiple choice:  read_chart -> evaluate -> end
 
 Every message is passed to ``emit`` as it happens, so a run can be watched live.
 """
@@ -33,8 +33,7 @@ class CaseState(TypedDict, total=False):
     questions: int
     nurse_history: list[Message]
     pending: dict | None        # the nurse's last parsed reply
-    initial: dict | None        # first decision: esi, reasoning, forced
-    final: dict | None          # after self-review
+    decision: dict | None       # the nurse's decision: esi, reasoning, forced
     evaluation: dict | None
 
 
@@ -89,9 +88,9 @@ def run_case(case: dict, config: ExperimentConfig, models: dict[str, ChatModel],
             return {"nurse_history": history, "pending": {"action": "invalid"},
                     "transcript": say(state, "system", "The nurse's reply was not in the required format twice.")}
         if parsed["action"] == "decide":
-            initial = {"esi": parsed["esi"], "reasoning": parsed["message"], "forced": False}
-            emit({"type": "decision", "case_id": case["case_id"], "stage": "initial", **initial})
-            return {"nurse_history": history, "pending": parsed, "initial": initial,
+            decision = {"esi": parsed["esi"], "reasoning": parsed["message"], "forced": False}
+            emit({"type": "decision", "case_id": case["case_id"], **decision})
+            return {"nurse_history": history, "pending": parsed, "decision": decision,
                     "transcript": say(state, "nurse", parsed["message"], decision=parsed["esi"])}
         questions = state["questions"] + 1
         if questions > nurse_cfg.max_turns:
@@ -101,7 +100,7 @@ def run_case(case: dict, config: ExperimentConfig, models: dict[str, ChatModel],
 
     def route_after_nurse(state: CaseState) -> str:
         action = state["pending"]["action"]
-        return {"ask": "patient", "decide": "self_review"}.get(action, "force")
+        return {"ask": "patient", "decide": "evaluate"}.get(action, "force")
 
     def force_(state: CaseState) -> CaseState:
         note = (f"You have reached the limit of {nurse_cfg.max_turns} questions. Decide now "
@@ -112,11 +111,11 @@ def run_case(case: dict, config: ExperimentConfig, models: dict[str, ChatModel],
         parsed, _ = ask_structured(nurse_model, nurse_cfg.model, messages, P.DECISION, P.parse_decision,
                                    usage["nurse"])
         if parsed is None:
-            return {"transcript": transcript, "initial": None}
-        initial = {"esi": parsed["esi"], "reasoning": parsed["reasoning"], "forced": True}
-        emit({"type": "decision", "case_id": case["case_id"], "stage": "initial", **initial})
+            return {"transcript": transcript, "decision": None}
+        decision = {"esi": parsed["esi"], "reasoning": parsed["reasoning"], "forced": True}
+        emit({"type": "decision", "case_id": case["case_id"], **decision})
         return {"transcript": say({**state, "transcript": transcript}, "nurse", parsed["reasoning"],
-                                  decision=parsed["esi"]), "initial": initial}
+                                  decision=parsed["esi"]), "decision": decision}
 
     # ---- chart review / multiple choice ------------------------------------------------
     def read_chart(state: CaseState) -> CaseState:
@@ -128,34 +127,19 @@ def run_case(case: dict, config: ExperimentConfig, models: dict[str, ChatModel],
                                      P.parse_multiple_choice if mcq else P.parse_decision, usage["nurse"])
         history = [system, ask, Message("assistant", raw)]
         if parsed is None:
-            return {"nurse_history": history, "initial": None,
+            return {"nurse_history": history, "decision": None,
                     "transcript": say(state, "system", "The nurse's reply was not in the required format twice.")}
-        initial = {"esi": parsed["esi"], "reasoning": parsed["reasoning"], "forced": False}
-        emit({"type": "decision", "case_id": case["case_id"], "stage": "initial", **initial})
-        return {"nurse_history": history, "initial": initial,
+        decision = {"esi": parsed["esi"], "reasoning": parsed["reasoning"], "forced": False}
+        emit({"type": "decision", "case_id": case["case_id"], **decision})
+        return {"nurse_history": history, "decision": decision,
                 "transcript": say(state, "nurse", parsed["reasoning"], decision=parsed["esi"])}
 
     # ---- shared tail ----------------------------------------------------------------------
-    def self_review(state: CaseState) -> CaseState:
-        initial = state.get("initial")
-        if not initial or not nurse_cfg.self_review.enabled:
-            return {"final": initial}
-        prompt = nurse_cfg.self_review.prompt.format(decision=initial["esi"])
-        transcript = say(state, "system", prompt, kind="self_review")
-        messages = state["nurse_history"] + [Message("user", prompt + P.SELF_REVIEW_INSTRUCTIONS)]
-        parsed, _ = ask_structured(nurse_model, nurse_cfg.model, messages, P.SELF_REVIEW, P.parse_self_review,
-                                   usage["nurse"])
-        final = {**initial, "esi": parsed["esi"] if parsed else initial["esi"],
-                 "reasoning": parsed["reasoning"] if parsed else initial["reasoning"]}
-        emit({"type": "decision", "case_id": case["case_id"], "stage": "final", **final})
-        return {"final": final, "transcript": say({**state, "transcript": transcript}, "nurse",
-                                                  final["reasoning"], decision=final["esi"], kind="self_review")}
-
     def evaluate(state: CaseState) -> CaseState:
         ev = config.evaluator
         if not ev or not ev.enabled:
             return {"evaluation": None}
-        final = state.get("final")
+        final = state.get("decision")
         transcript = "\n".join(f"{m['speaker'].capitalize()}: {m['text']}" for m in state.get("transcript", [])
                                if m["speaker"] != "system")
         ev_values = {**values, "transcript": transcript, "decision": str(final["esi"]) if final else "none"}
@@ -176,29 +160,26 @@ def run_case(case: dict, config: ExperimentConfig, models: dict[str, ChatModel],
         graph.add_edge(START, "open")
         graph.add_edge("open", "patient")
         graph.add_edge("patient", "nurse")
-        graph.add_conditional_edges("nurse", route_after_nurse, ["patient", "self_review", "force"])
-        graph.add_edge("force", "self_review")
+        graph.add_conditional_edges("nurse", route_after_nurse, ["patient", "evaluate", "force"])
+        graph.add_edge("force", "evaluate")
     else:
         graph.add_node("read_chart", read_chart)
         graph.add_edge(START, "read_chart")
-        graph.add_edge("read_chart", "self_review")
-    graph.add_node("self_review", self_review)
+        graph.add_edge("read_chart", "evaluate")
     graph.add_node("evaluate", evaluate)
-    graph.add_edge("self_review", "evaluate")
     graph.add_edge("evaluate", END)
 
     emit({"type": "case_start", "case_id": case["case_id"], "persona": persona_name})
     state = graph.compile().invoke({"transcript": [], "questions": 0},
                                    {"recursion_limit": 4 * nurse_cfg.max_turns + 20})
-    initial, final = state.get("initial"), state.get("final")
+    decision = state.get("decision")
     result: dict[str, Any] = {
         "case_id": case["case_id"], "stay_id": case["stay_id"], "experiment": config.name,
         "mode": nurse_cfg.mode, "persona": persona_name,
         "reference_esi": case["reference"]["esi"], "head_injury": case["reference"].get("head_injury_icd"),
         "disposition": case["reference"].get("disposition"),
-        "esi_initial": initial["esi"] if initial else None,
-        "esi_final": final["esi"] if final else None,
-        "decided": final is not None, "forced": bool(initial and initial["forced"]),
+        "esi": decision["esi"] if decision else None,
+        "decided": decision is not None, "forced": bool(decision and decision["forced"]),
         "questions": state.get("questions", 0) if nurse_cfg.mode == "interview" else 0,
         "evaluation": state.get("evaluation"),
         "format_retries": sum(u.format_retries for u in usage.values()),
@@ -209,5 +190,5 @@ def run_case(case: dict, config: ExperimentConfig, models: dict[str, ChatModel],
         "transcript": state.get("transcript", []),
     }
     emit({"type": "case_done", "case_id": case["case_id"],
-          **{k: result[k] for k in ("esi_initial", "esi_final", "reference_esi", "decided", "questions")}})
+          **{k: result[k] for k in ("esi", "reference_esi", "decided", "questions")}})
     return result

@@ -62,22 +62,19 @@ def _mean_sd(values: list[float]) -> dict | None:
 
 def run_metrics(results: list[dict]) -> dict:
     """All metrics for one run."""
-    decided = [r for r in results if r["esi_final"] is not None and r["reference_esi"] is not None]
+    decided = [r for r in results if r["esi"] is not None and r["reference_esi"] is not None]
     n = len(decided)
-    under = [r for r in decided if r["esi_final"] > r["reference_esi"]]
-    over = [r for r in decided if r["esi_final"] < r["reference_esi"]]
-    agree = [r for r in decided if r["esi_final"] == r["reference_esi"]]
-    within1 = [r for r in decided if abs(r["esi_final"] - r["reference_esi"]) <= 1]
+    under = [r for r in decided if r["esi"] > r["reference_esi"]]
+    over = [r for r in decided if r["esi"] < r["reference_esi"]]
+    agree = [r for r in decided if r["esi"] == r["reference_esi"]]
+    within1 = [r for r in decided if abs(r["esi"] - r["reference_esi"]) <= 1]
 
     confusion = {str(ref): {str(got): 0 for got in range(1, 6)} for ref in range(1, 6)}
     for r in decided:
-        confusion[str(r["reference_esi"])][str(r["esi_final"])] += 1
+        confusion[str(r["reference_esi"])][str(r["esi"])] += 1
 
     head = [r for r in decided if r.get("head_injury") is True]
     labelled = any(r.get("head_injury") is not None for r in results)
-
-    reviewed = [r for r in decided if r["esi_initial"] is not None]
-    changed = [r for r in reviewed if r["esi_initial"] != r["esi_final"]]
 
     scores = {k: _mean_sd([r["evaluation"]["scores"][k] for r in results if r.get("evaluation")])
               for k in ("history_taking", "risk_identification", "decision")}
@@ -86,8 +83,8 @@ def run_metrics(results: list[dict]) -> dict:
     for name in sorted({r["persona"] for r in decided if r.get("persona")}):
         group = [r for r in decided if r.get("persona") == name]
         personas[name] = {"cases": len(group),
-                          "agreement": wilson(sum(r["esi_final"] == r["reference_esi"] for r in group), len(group)),
-                          "under_triage": wilson(sum(r["esi_final"] > r["reference_esi"] for r in group), len(group))}
+                          "agreement": wilson(sum(r["esi"] == r["reference_esi"] for r in group), len(group)),
+                          "under_triage": wilson(sum(r["esi"] > r["reference_esi"] for r in group), len(group))}
 
     questions = [r["questions"] for r in results if r.get("mode") == "interview" and r["decided"]]
     return {
@@ -100,19 +97,12 @@ def run_metrics(results: list[dict]) -> dict:
         "within_one_level": wilson(len(within1), n),
         "under_triage": wilson(len(under), n),
         "over_triage": wilson(len(over), n),
-        "weighted_kappa": weighted_kappa([(r["reference_esi"], r["esi_final"]) for r in decided]),
+        "weighted_kappa": weighted_kappa([(r["reference_esi"], r["esi"]) for r in decided]),
         "confusion": confusion,
         "head_injury": None if not labelled else {
             "cases": len(head),
-            "under_triage_vs_nurse": wilson(sum(r["esi_final"] > r["reference_esi"] for r in head), len(head)),
-            "esi_3_or_lower_urgency": wilson(sum(r["esi_final"] >= 3 for r in head), len(head)),
-        },
-        "self_review": {
-            "cases": len(reviewed), "changed": len(changed),
-            "more_urgent": sum(r["esi_final"] < r["esi_initial"] for r in changed),
-            "less_urgent": sum(r["esi_final"] > r["esi_initial"] for r in changed),
-            "agreement_before": wilson(sum(r["esi_initial"] == r["reference_esi"] for r in reviewed), len(reviewed)),
-            "under_triage_before": wilson(sum(r["esi_initial"] > r["reference_esi"] for r in reviewed), len(reviewed)),
+            "under_triage_vs_nurse": wilson(sum(r["esi"] > r["reference_esi"] for r in head), len(head)),
+            "esi_3_or_lower_urgency": wilson(sum(r["esi"] >= 3 for r in head), len(head)),
         },
         "questions": None if not questions else {"mean": round(mean(questions), 2), "median": median(questions),
                                                  "min": min(questions), "max": max(questions)},
@@ -123,9 +113,9 @@ def run_metrics(results: list[dict]) -> dict:
 
 
 OUTCOMES = {
-    "under_triage": lambda r: r["esi_final"] > r["reference_esi"],
-    "agreement": lambda r: r["esi_final"] == r["reference_esi"],
-    "head_injury_under_triage": lambda r: r["esi_final"] > r["reference_esi"],
+    "under_triage": lambda r: r["esi"] > r["reference_esi"],
+    "agreement": lambda r: r["esi"] == r["reference_esi"],
+    "head_injury_under_triage": lambda r: r["esi"] > r["reference_esi"],
 }
 
 
@@ -134,7 +124,7 @@ def compare_runs(a: list[dict], b: list[dict], outcome: str = "under_triage") ->
     test = OUTCOMES[outcome]
     by_id = {r["case_id"]: r for r in b}
     pairs = [(r, by_id[r["case_id"]]) for r in a if r["case_id"] in by_id]
-    pairs = [(x, y) for x, y in pairs if x["esi_final"] is not None and y["esi_final"] is not None]
+    pairs = [(x, y) for x, y in pairs if x["esi"] is not None and y["esi"] is not None]
     if outcome == "head_injury_under_triage":
         pairs = [(x, y) for x, y in pairs if x.get("head_injury") is True]
     only_a = sum(test(x) and not test(y) for x, y in pairs)

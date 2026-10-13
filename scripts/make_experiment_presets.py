@@ -108,11 +108,11 @@ EVERYTHING = ["age", "sex", "chief_complaint", "arrival_transport", "vitals", "h
               "past_medical_history", "social_history", "allergies", "medications"]
 
 
-def nurse(mode, prompt, sees, self_review=True):
+def nurse(mode, prompt, sees):
     return {"mode": mode, "model": {"name": QWEN, "temperature": 0.0, "seed": 42},
             "sees": sees, "system_prompt": prompt,
             "opening_message": "Hello, I'm the triage nurse. What brings you in today?",
-            "max_turns": 12, "self_review": {"enabled": self_review}}
+            "max_turns": 12}
 
 
 def patient(persona="neutral", mode="llm"):

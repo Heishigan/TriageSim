@@ -125,14 +125,6 @@ export default function NewExperiment() {
             <input type="number" min={1} max={50} className={inputClass} value={config.nurse.max_turns} onChange={(e) => set("nurse.max_turns", Number(e.target.value))} /></Field>}
           {interview && <Field label="Opening question"><input className={inputClass} value={config.nurse.opening_message} onChange={(e) => set("nurse.opening_message", e.target.value)} /></Field>}
         </div>
-        <div className="mt-4 rounded-lg bg-slate-50 p-4">
-          <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={config.nurse.self_review.enabled}
-            onChange={(e) => set("nurse.self_review.enabled", e.target.checked)} />Self-review after deciding</label>
-          <p className="mt-1 text-xs text-slate-500">After the nurse decides, it gets one more message asking it to double-check (the prompt below) and may change its ESI.
-            Both levels are recorded, so the results show how much the double-check changes. Switch it off to measure the nurse without it.</p>
-          {config.nurse.self_review.enabled && <textarea rows={2} className={`${inputClass} mt-2 font-mono text-xs`} value={config.nurse.self_review.prompt}
-            onChange={(e) => set("nurse.self_review.prompt", e.target.value)} />}
-        </div>
       </AgentCard>
 
       {interview && config.patient && (

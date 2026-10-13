@@ -79,7 +79,7 @@ export type RunStatus = {
 };
 export type RunEvent = {
   type: string; case_id?: string; speaker?: string; text?: string; turn?: number; decision?: number;
-  kind?: string; stage?: string; esi?: number; esi_final?: number; reference_esi?: number; persona?: string;
+  kind?: string; esi?: number; reference_esi?: number; persona?: string;
   questions?: number; error?: string; time?: number; retrieved?: string[];
 };
 export type Metrics = {
@@ -87,8 +87,6 @@ export type Metrics = {
   agreement: Wilson; within_one_level: Wilson; under_triage: Wilson; over_triage: Wilson;
   weighted_kappa: number | null; confusion: Record<string, Record<string, number>>;
   head_injury: null | { cases: number; under_triage_vs_nurse: Wilson; esi_3_or_lower_urgency: Wilson };
-  self_review: { cases: number; changed: number; more_urgent: number; less_urgent: number;
-    agreement_before: Wilson; under_triage_before: Wilson };
   questions: null | { mean: number; median: number; min: number; max: number };
   evaluator_scores: Record<string, null | { mean: number; sd: number; n: number }>;
   by_persona: Record<string, { cases: number; agreement: Wilson; under_triage: Wilson }>;

@@ -32,8 +32,7 @@ Models run in [Ollama](https://ollama.com), which must be installed separately.
    it may read. Prompts can only use fields the agent is allowed to see; the nurse and
    patient can never see the answers.
 5. **Runs & results**: watch conversations live, stop and resume, then see agreement,
-   under- and over-triage, head-injury under-triage, the effect of self-review, evaluator
-   scores and per-persona results, with 95% Wilson intervals, paired McNemar comparisons
+   under- and over-triage, head-injury under-triage, evaluator scores and per-persona results, with 95% Wilson intervals, paired McNemar comparisons
    between runs and a plain-language summary written by a model.
 
 ## Data
@@ -61,7 +60,7 @@ are never committed to git.
 | `multiple_choice` | The same information as a board-style question |
 
 Defaults: nurse and evaluator `qwen2.5:32b` (temperature 0), patient `llama3.1:8b`
-(temperature 0.7), seed 42, self-review on, 12-question limit, 20 random cases.
+(temperature 0.7), seed 42, 12-question limit, 20 random cases.
 
 ## Cluster (command line)
 
@@ -92,6 +91,8 @@ Files containing patient-level data (`cohort.csv`, `cases.jsonl`, `review.csv`,
 
 ```bash
 uv run --extra dev pytest          # tests use invented data only
+uv run triagesim ui --demo --no-browser &   # then, with Playwright installed:
+python scripts/browser_test.py http://127.0.0.1:8765   # clicks through the whole app
 cd frontend && npm install && npm run build   # rebuilds src/triagesim/web/
 ```
 

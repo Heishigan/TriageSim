@@ -200,3 +200,9 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   and Hugging Face GGUF). A run whose Ollama models are not downloaded is refused before
   it starts, naming the missing models.
 - D62. Fixed default port 8765 (a free one if taken), so open tabs survive a restart.
+
+## Self-review removed (2026-10-13)
+- D63. Self-review is removed entirely (supersedes D12, D41's "self-review on", D44). Albert:
+  it downplays the experiment's core question (the nurse's own decision), and in the thesis
+  it mostly just shifted the ESI. Each case now has one ESI ('esi'); after deciding, the
+  case goes straight to the evaluator.

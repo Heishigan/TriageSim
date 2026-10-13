@@ -5,7 +5,7 @@ import { Alert, Badge, Button, Card, Field, Page, Progress, Spinner, Stat, State
 
 type Detail = { name: string; status: RunStatus; config: { name: string; description: string; nurse: { mode: string; model: { name: string } };
   patient?: { model: { name: string }; persona: string; mode: string }; evaluator?: { enabled: boolean } } };
-type Row = { case_id: string; persona: string | null; reference_esi: number; esi_initial: number | null; esi_final: number | null;
+type Row = { case_id: string; persona: string | null; reference_esi: number; esi: number | null;
   head_injury: boolean | null; decided: boolean; forced: boolean; questions: number; seconds: number;
   scores: Record<string, number> | null };
 type Results = { metrics: Metrics; cases: Row[] };
@@ -90,7 +90,7 @@ function Live({ name }: { name: string }) {
           {[...done].reverse().map((e) => (
             <li key={e.case_id}><button onClick={() => setPick(e.case_id!)} className="flex w-full items-center justify-between rounded px-2 py-1 hover:bg-slate-50">
               <span className="font-mono text-xs">{e.case_id}</span>
-              <EsiPair got={e.esi_final} reference={e.reference_esi} /></button></li>))}
+              <EsiPair got={e.esi} reference={e.reference_esi} /></button></li>))}
         </ul>
         {events.some((e) => e.type === "run_failed") && <Alert kind="error">{events.find((e) => e.type === "run_failed")?.error}</Alert>}
       </Card>
@@ -112,7 +112,7 @@ function Conversation({ messages }: { messages: Message[] }) {
         <div key={i} className={`flex ${m.speaker === "patient" ? "justify-end" : "justify-start"}`}>
           <div className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow-sm ${m.speaker === "patient" ? "bg-brand-600 text-white" : "border border-slate-200 bg-white"}`}>
             <div className={`mb-0.5 text-[11px] font-semibold uppercase tracking-wide ${m.speaker === "patient" ? "text-brand-100" : "text-slate-400"}`}>
-              {m.speaker}{m.kind === "self_review" ? " · self-review" : ""}</div>
+              {m.speaker}</div>
             <div className="whitespace-pre-wrap">{m.text}</div>
             {m.decision && <div className="mt-1"><Badge color="blue">Decision: ESI {m.decision}</Badge></div>}
             {m.retrieved && <details className="mt-1 text-xs opacity-80"><summary>retrieved passages</summary>{m.retrieved.map((r, j) => <p key={j}>• {r}</p>)}</details>}
@@ -131,10 +131,10 @@ function Cases({ name }: { name: string }) {
   return (
     <div className="space-y-6">
       <Card>
-        <Table head={["Case", "Persona", "Nurse ESI", "Agent ESI (before → after review)", "Head injury", "Questions", "Scores", ""]}
+        <Table head={["Case", "Persona", "Nurse ESI", "Agent ESI", "Head injury", "Questions", "Scores", ""]}
           rows={(data?.cases ?? []).map((r) => [
             <span className="font-mono text-xs">{r.case_id}</span>, r.persona ?? "–", r.reference_esi,
-            <span>{r.esi_initial ?? "–"} → <EsiPair got={r.esi_final} reference={r.reference_esi} />{r.forced && <Badge color="amber">forced</Badge>}</span>,
+            <span><EsiPair got={r.esi} reference={r.reference_esi} />{r.forced && <Badge color="amber">forced</Badge>}</span>,
             r.head_injury === null ? "–" : r.head_injury ? "yes" : "no", r.questions,
             r.scores ? Object.values(r.scores).join(" / ") : "–",
             <Button variant="ghost" onClick={() => setOpen(r.case_id)}>Transcript</Button>])}
@@ -193,11 +193,10 @@ function ResultsView({ name }: { name: string }) {
               })}</tr>))}</tbody></table>
           <p className="mt-2 text-xs text-slate-500">Red = under-triage (less urgent than the nurse), amber = over-triage.</p>
         </Card>
-        <Card title="Self-review">
+        <Card title="Run details">
           <ul className="space-y-1 text-sm">
-            <li>Changed the decision in <b>{m.self_review.changed}</b> of {m.self_review.cases} cases ({m.self_review.more_urgent} more urgent, {m.self_review.less_urgent} less urgent)</li>
-            <li>Agreement before review: {pct(m.self_review.agreement_before)} → after: {pct(m.agreement)}</li>
-            <li>Under-triage before review: {pct(m.self_review.under_triage_before)} → after: {pct(m.under_triage)}</li>
+            <li>Within one ESI level of the nurse: {pct(m.within_one_level)} <span className="text-slate-500">({ci(m.within_one_level)})</span></li>
+            <li>Decisions forced at the question limit: {m.forced_decisions}</li>
           </ul>
           {m.questions && <p className="mt-3 text-sm">Questions per interview: mean {m.questions.mean}, median {m.questions.median} (range {m.questions.min}–{m.questions.max})</p>}
           <p className="mt-1 text-sm text-slate-500">{m.seconds_per_case}s per case · {m.format_failures} format failures</p>

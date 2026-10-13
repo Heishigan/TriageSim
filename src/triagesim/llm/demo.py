@@ -40,8 +40,6 @@ class DemoModel:
             else:
                 text = json.dumps({"action": "decide", "esi": rng.choice([2, 2, 3, 3, 4]),
                                    "message": "Fall with possible head strike; I'll prioritise imaging."})
-        elif "changed" in props:                                # self-review
-            text = json.dumps({"esi": rng.choice([2, 3]), "changed": False, "reasoning": "Demo review."})
         elif "history_taking" in props:                         # evaluator
             text = json.dumps({"history_taking": rng.randint(5, 9), "risk_identification": rng.randint(4, 9),
                                "decision": rng.randint(4, 9), "feedback": "Demo feedback (not a real evaluation)."})

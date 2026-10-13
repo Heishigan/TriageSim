@@ -215,3 +215,6 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   Experiment model dropdown lists only downloaded models; the Demo model only in demo mode.
 - D66. Commits carry Albert as sole author, without AI attribution trailers (history rewritten
   once on 2026-10-13 to remove earlier trailers).
+- D67. Results saved before self-review was removed (esi_initial/esi_final) are read as
+  esi = esi_final, so older runs still open. The results and cases tabs show load errors
+  instead of spinning forever.

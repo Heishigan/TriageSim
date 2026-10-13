@@ -87,7 +87,18 @@ def read_results(run_dir: Path) -> list[dict]:
     path = Path(run_dir) / "results.jsonl"
     if not path.is_file():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [_upgrade(json.loads(line)) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _upgrade(result: dict) -> dict:
+    """Read results saved by older versions.
+
+    Before self-review was removed (2026-10-13) a result had 'esi_initial' and 'esi_final'
+    instead of 'esi'; the final (reviewed) level was the one reported.
+    """
+    if "esi" not in result and "esi_final" in result:
+        result["esi"] = result["esi_final"]
+    return result
 
 
 def build_models(config: ExperimentConfig) -> tuple[dict[str, ChatModel], Callable | None]:

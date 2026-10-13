@@ -94,7 +94,7 @@ function Live({ name }: { name: string }) {
           {[...done].reverse().map((e) => (
             <li key={e.case_id}><button onClick={() => setPick(e.case_id!)} className="flex w-full items-center justify-between rounded px-2 py-1 hover:bg-slate-50">
               <span className="font-mono text-xs">{e.case_id}</span>
-              <EsiPair got={e.esi} reference={e.reference_esi} /></button></li>))}
+              <EsiPair got={e.esi ?? e.esi_final} reference={e.reference_esi} /></button></li>))}
         </ul>
         {events.some((e) => e.type === "run_failed") && <Alert kind="error">{events.find((e) => e.type === "run_failed")?.error}</Alert>}
       </Card>
@@ -128,12 +128,13 @@ function Conversation({ messages }: { messages: Message[] }) {
 
 /* ---- cases ------------------------------------------------------------------------- */
 function Cases({ name }: { name: string }) {
-  const { data } = useApi<Results>(`/runs/${name}/results`, 5000);
+  const { data, error } = useApi<Results>(`/runs/${name}/results`, 5000);
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ transcript: Message[]; evaluation: { feedback: string } | null } | null>(null);
   useEffect(() => { if (open) api<typeof detail>(`/runs/${name}/cases/${open}`).then(setDetail); }, [open, name]);
   return (
     <div className="space-y-6">
+      {error && <Alert kind="error">Could not load the cases: {error}</Alert>}
       <Card>
         <Table head={["Case", "Persona", "Nurse ESI", "Agent ESI", "Head injury", "Questions", "Scores", ""]}
           rows={(data?.cases ?? []).map((r) => [
@@ -155,9 +156,10 @@ function Cases({ name }: { name: string }) {
 
 /* ---- results ----------------------------------------------------------------------- */
 function ResultsView({ name }: { name: string }) {
-  const { data } = useApi<Results>(`/runs/${name}/results`);
+  const { data, error } = useApi<Results>(`/runs/${name}/results`);
   const [summary, setSummary] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  if (error) return <Alert kind="error">Could not load the results: {error}. The details are in the terminal window.</Alert>;
   if (!data) return <Spinner />;
   const m = data.metrics;
   if (!m.cases) return <Alert>No finished cases yet.</Alert>;

@@ -80,6 +80,7 @@ export type RunStatus = {
 export type RunEvent = {
   type: string; case_id?: string; speaker?: string; text?: string; turn?: number; decision?: number;
   kind?: string; esi?: number; reference_esi?: number; persona?: string;
+  esi_final?: number; // runs saved before self-review was removed
   questions?: number; error?: string; time?: number; retrieved?: string[];
 };
 export type Metrics = {

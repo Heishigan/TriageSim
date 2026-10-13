@@ -86,3 +86,15 @@ def test_sampling_is_reproducible(cohorts, tmp_path):
 def test_every_preset_runs_with_the_demo_model(cohorts, tmp_path, preset):
     run_dir = create_run(demo_config(preset), tmp_path / "runs", cohorts)
     assert execute(run_dir)["state"] == "completed"
+
+
+def test_results_from_before_self_review_removal_still_load(tmp_path):
+    """Runs saved before 2026-10-13 have esi_initial/esi_final instead of esi."""
+    from triagesim.results.metrics import run_metrics
+    old = {"case_id": "case-00001", "reference_esi": 2, "esi_initial": 3, "esi_final": 2, "decided": True,
+           "forced": False, "head_injury": None, "persona": None, "mode": "chart_review", "questions": 0,
+           "format_failures": 0, "seconds": 1.0, "evaluation": None}
+    (tmp_path / "results.jsonl").write_text(json.dumps(old) + "\n")
+    results = read_results(tmp_path)
+    assert results[0]["esi"] == 2
+    assert run_metrics(results)["agreement"]["k"] == 1

@@ -169,8 +169,8 @@ def ensure_model(client: OllamaClient, model, hf_token: str | None, cache_dir: P
 
     ``model`` is an experiment ModelSettings. Returns what happened, for the log.
     """
-    if model.source == "fake":
-        return "fake model, nothing to download"
+    if model.source in ("fake", "demo"):
+        return f"{model.source} model, nothing to download"
     if client.has_model(model.name):
         return "already installed"
     if model.source == "ollama":

@@ -1,0 +1,44 @@
+name: multiple_choice
+description: The same information as a board-style multiple-choice question.
+cohort: elderly_falls
+ollama_url: http://localhost:11434
+sampling:
+  cases: 20
+  order: random
+  seed: 42
+nurse:
+  mode: multiple_choice
+  model:
+    name: qwen2.5:32b
+    temperature: 0.0
+    seed: 42
+  sees:
+  - age
+  - sex
+  - chief_complaint
+  - arrival_transport
+  - vitals
+  - hpi
+  - past_medical_history
+  - medications
+  system_prompt: |-
+    Answer this board-style question.
+
+    A {age}-year-old {sex} arrives at the emergency department by {arrival_transport}.
+    Chief complaint: {chief_complaint}. Triage vital signs: {vitals}.
+    History: {hpi}
+    Past medical history: {past_medical_history}. Home medications: {medications}.
+
+    What is the most appropriate Emergency Severity Index (ESI) level?
+    A) ESI 1   B) ESI 2   C) ESI 3   D) ESI 4   E) ESI 5
+
+    ESI levels:
+    1 - Needs an immediate life-saving intervention.
+    2 - High-risk situation, new confusion or lethargy, or severe pain or distress.
+    3 - Stable, but needs two or more resources (labs, imaging, IV fluids or medication, a specialist).
+    4 - Needs one resource.
+    5 - Needs no resources.
+  opening_message: Hello, I'm the triage nurse. What brings you in today?
+  max_turns: 12
+  self_review:
+    enabled: true

@@ -126,7 +126,7 @@ Command line (optional, for scripting):
 
 ```bash
 uv run triagesim cohort check
-uv run triagesim cohort build --settings configs/elderly_falls.yaml
+uv run triagesim cohort build --settings configs/cohorts/elderly_falls.yaml
 ```
 
 ## Filters
@@ -158,7 +158,7 @@ Each build creates `outputs/<name>_<timestamp>/`:
 
 ## Presets
 
-`configs/elderly_falls.yaml`: patients 65 or older, admitted through the ED with a
+`configs/cohorts/elderly_falls.yaml`: patients 65 or older, admitted through the ED with a
 fall code (ICD-10 W00-W19, ICD-9 E880-E888), ESI recorded, first visit per patient.
 
 ## Development

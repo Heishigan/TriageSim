@@ -100,14 +100,14 @@ if step == 1:
 # ---- Step 2: filters ---------------------------------------------------------------
 elif step == 2:
     st.header("Step 2: Choose the filters")
-    presets = sorted(paths.CONFIG_DIR.glob("*.yaml")) if paths.CONFIG_DIR.is_dir() else []
+    presets = sorted(paths.COHORT_PRESETS.glob("*.yaml")) if paths.COHORT_PRESETS.is_dir() else []
     preset = st.selectbox("Start from a preset", ["(none)"] + [p.stem for p in presets],
                           key=kept("preset", "(none)"), on_change=save, args=("preset",),
                           help="A preset fills in the filters below. You can change them afterwards.")
     base = CohortSettings()
     if preset != "(none)":
         try:
-            base = CohortSettings.from_yaml(paths.CONFIG_DIR / f"{preset}.yaml")
+            base = CohortSettings.from_yaml(paths.COHORT_PRESETS / f"{preset}.yaml")
         except (OSError, ValueError, TypeError) as exc:
             st.error(f"Preset '{preset}' could not be loaded: {exc}")
 

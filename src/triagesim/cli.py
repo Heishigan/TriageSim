@@ -80,6 +80,30 @@ def _build_cases(args) -> int:
     return 0
 
 
+def _pull_models(args) -> int:
+    import os
+    from .experiment.config import ExperimentConfig
+    from .llm.base import ModelError
+    from .llm.ollama import OllamaClient, ensure_model
+    config = ExperimentConfig.from_yaml(args.experiment)
+    client = OllamaClient(config.ollama_url)
+
+    def show(p):
+        total = p.get("total") or 0
+        pct = f" {100 * p['completed'] / total:5.1f}%" if total else ""
+        print(f"  {p['status'][:50]:<50}{pct}", end="\r", flush=True)
+
+    try:
+        for model in {m.name: m for m in config.models()}.values():
+            print(f"{model.name}:")
+            result = ensure_model(client, model, os.environ.get("HF_TOKEN"), paths.output_dir() / "models", show)
+            print(f"  {result:<60}")
+    except ModelError as exc:
+        print(f"\nError: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("localhost", 0))
@@ -151,6 +175,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--data", default=str(paths.data_dir()), help=argparse.SUPPRESS)
     p.add_argument("--no-labels", action="store_true", help="skip labels (no hosp/diagnoses_icd file)")
     p.set_defaults(func=_build_cases)
+
+    models = sub.add_parser("models", help="model downloads").add_subparsers(dest="action", required=True)
+    p = models.add_parser("pull", help="download every model an experiment uses (HF_TOKEN for gated models)")
+    p.add_argument("--experiment", required=True, help="experiment YAML file")
+    p.set_defaults(func=_pull_models)
 
     args = parser.parse_args(argv)
     return args.func(args)

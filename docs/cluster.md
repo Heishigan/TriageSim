@@ -93,5 +93,9 @@ Jobs running on GPU nodes appear as running (live view works); stop them with `s
 ## Adjust to your cluster
 
 Edit the `#SBATCH` lines in `cluster/*.sbatch`: partition, account, memory and time limit.
+The scripts ask for 10 hours, the per-job maximum of the `slurm-students` account. A job that
+asks for more stays pending with `AssocMaxWallDurationPerJobLimit`; check your limit with
+`sacctmgr show assoc where user=$USER format=Account,MaxWall` and override per job with
+`sbatch --time=HH:MM:SS ...`.
 On clusters that register GPUs as resources add e.g. `#SBATCH --gres=gpu:1` (this cluster's
 `gpu` partition does not).

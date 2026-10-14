@@ -9,7 +9,7 @@
 #SBATCH --account=slurm-students
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --time=12:00:00
+#SBATCH --time=10:00:00
 #SBATCH --output=logs/%x_%j.out
 set -uo pipefail
 cd "$SLURM_SUBMIT_DIR"

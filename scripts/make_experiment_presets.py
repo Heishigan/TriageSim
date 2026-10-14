@@ -183,6 +183,8 @@ BENCHMARK_NURSES = {
     "gemma3-27b": "gemma3:27b",     # general model ...
     "medgemma-27b": "medgemma:27b", # ... and its medical fine-tune (same base): isolates medical training
 }
+# Evaluator from another model family than every nurse, so it does not grade its own kind.
+BENCHMARK_EVALUATOR = "gpt-oss:20b"
 bench = out / "benchmark"
 bench.mkdir(exist_ok=True)
 for preset in ("chart_review", "interview"):
@@ -194,6 +196,9 @@ for preset in ("chart_review", "interview"):
                   "cohort": "elderly_falls", "ollama_url": "http://127.0.0.1:11434",
                   "sampling": {"cases": 100, "order": "random", "seed": 42},
                   **parts, "nurse": nurse_part}
+        if "evaluator" in config:
+            config["evaluator"] = {**config["evaluator"],
+                                   "model": {"name": BENCHMARK_EVALUATOR, "temperature": 0.0, "seed": 42}}
         (bench / f"{preset}_{short}.yaml").write_text(
             yaml.safe_dump(literal(config), sort_keys=False, allow_unicode=True, width=100), encoding="utf-8")
         print("wrote benchmark", preset, short)

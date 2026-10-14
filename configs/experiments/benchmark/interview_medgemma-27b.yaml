@@ -94,7 +94,7 @@ patient:
 evaluator:
   enabled: true
   model:
-    name: qwen2.5:32b
+    name: gpt-oss:20b
     temperature: 0.0
     seed: 42
   sees:

@@ -98,3 +98,22 @@ def test_results_from_before_self_review_removal_still_load(tmp_path):
     results = read_results(tmp_path)
     assert results[0]["esi"] == 2
     assert run_metrics(results)["agreement"]["k"] == 1
+
+
+def test_heartbeat_tells_running_from_gone(cohorts, tmp_path, monkeypatch):
+    import time as _time
+    from triagesim.experiment import runner
+    from triagesim.experiment.runner import is_alive, write_status
+    assert is_alive({"heartbeat": _time.time()})
+    assert not is_alive({"heartbeat": _time.time() - 600}) and not is_alive({})
+    monkeypatch.setattr(runner, "HEARTBEAT_SECONDS", 0.05)
+    run_dir = create_run(demo_config(), tmp_path / "runs", cohorts)
+    beats = []
+
+    def slow(event):
+        if event["type"] == "case_done":
+            _time.sleep(0.2)
+            beats.append(read_status(run_dir).get("heartbeat"))
+    execute(run_dir, on_event=slow)
+    assert beats and all(b for b in beats)
+    assert read_status(run_dir)["host"]

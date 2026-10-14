@@ -218,3 +218,17 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
 - D67. Results saved before self-review was removed (esi_initial/esi_final) are read as
   esi = esi_final, so older runs still open. The results and cases tabs show load errors
   instead of spinning forever.
+
+## Cluster (2026-10-14)
+- D68. Runs write a heartbeat (every 15 s) with host and Slurm job id; the app shows runs
+  executed elsewhere (Slurm, terminal) as running and lets you watch them; without a
+  heartbeat for 2 minutes a run counts as interrupted. Slurm runs are stopped with scancel.
+- D69. cluster/run_experiment.sbatch: one private Ollama per job (own port, shared model
+  folder ~/ollama-models, models kept loaded), TRIAGESIM_OLLAMA_URL points TriageSim to it;
+  SIGTERM 3 min before the time limit stops after the current case; --resume continues.
+  cluster/pull_models.sh downloads on the login node; cluster/build_cases.sbatch builds
+  cohort + cases. Guide: docs/cluster.md.
+- D70. Benchmark v1 (configs/experiments/benchmark/): chart review and interview x three nurse
+  models (qwen2.5:32b = thesis anchor; gemma3:27b vs medgemma:27b = same base, isolates
+  medical fine-tuning). Patient llama3.1:8b and evaluator qwen2.5:32b fixed; 100 cases,
+  seed 42, same cohort for all runs.

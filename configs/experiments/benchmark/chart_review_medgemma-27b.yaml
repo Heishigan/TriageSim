@@ -1,0 +1,43 @@
+name: bench_chart_review_medgemma-27b
+description: 'Benchmark: Nurse reads the chart and decides, without talking to the patient. Nurse model
+  medgemma:27b.'
+cohort: elderly_falls
+ollama_url: http://127.0.0.1:11434
+sampling:
+  cases: 100
+  order: random
+  seed: 42
+nurse:
+  mode: chart_review
+  model:
+    name: medgemma:27b
+    temperature: 0.0
+    seed: 42
+  sees:
+  - age
+  - sex
+  - chief_complaint
+  - arrival_transport
+  - vitals
+  - hpi
+  - past_medical_history
+  - medications
+  system_prompt: |-
+    You are an experienced emergency department triage nurse reviewing a patient's chart.
+    Assign the Emergency Severity Index (ESI) level.
+
+    Patient: {age}-year-old {sex}, arrived by {arrival_transport}.
+    Chief complaint: {chief_complaint}
+    Triage vital signs: {vitals}
+    History of present illness: {hpi}
+    Past medical history: {past_medical_history}
+    Home medications: {medications}
+
+    ESI levels:
+    1 - Needs an immediate life-saving intervention.
+    2 - High-risk situation, new confusion or lethargy, or severe pain or distress.
+    3 - Stable, but needs two or more resources (labs, imaging, IV fluids or medication, a specialist).
+    4 - Needs one resource.
+    5 - Needs no resources.
+  opening_message: Hello, I'm the triage nurse. What brings you in today?
+  max_turns: 12

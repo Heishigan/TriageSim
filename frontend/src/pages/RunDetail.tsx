@@ -25,7 +25,7 @@ export default function RunDetail() {
   return (
     <Page title={name} subtitle={<Link className="text-brand-600 hover:underline" to="/runs">← All runs</Link>}
       actions={st && <>
-        {active && <Button variant="danger" onClick={stop}>Stop</Button>}
+        {active && !st.external && <Button variant="danger" onClick={stop}>Stop</Button>}
         {(st.state === "stopped" || st.state === "interrupted" || st.state === "failed") && <Button variant="primary" onClick={resume}>Resume</Button>}
       </>}>
       {detail.error && <Alert kind="error">Could not load this run: {detail.error}</Alert>}
@@ -39,7 +39,9 @@ export default function RunDetail() {
           </div>
           <div className="mt-4"><Progress value={st.done} total={st.total} label={`${st.done} of ${st.total} cases`} /></div>
           {st.state === "failed" && <div className="mt-4"><Alert kind="error"><pre className="whitespace-pre-wrap text-xs">{st.error}</pre></Alert></div>}
-          {st.state === "interrupted" && <div className="mt-4"><Alert kind="warning">The app was closed while this run was going. Resume continues where it stopped.</Alert></div>}
+          {st.state === "interrupted" && <div className="mt-4"><Alert kind="warning">This run's process stopped (the app was closed, or the cluster job ended). Resume continues where it stopped.</Alert></div>}
+          {st.external && <div className="mt-4"><Alert>Running {st.slurm_job ? <>as Slurm job <b>{st.slurm_job}</b></> : "in a terminal"} on <b>{st.host}</b>. You are watching it live.
+            {st.slurm_job && <> To stop it, run <code>scancel {st.slurm_job}</code> on the cluster.</>}</Alert></div>}
         </Card>)}
       <div className="flex gap-1 border-b border-slate-200">
         {(["live", "cases", "results"] as const).map((t) => (

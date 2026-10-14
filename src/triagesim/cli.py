@@ -85,8 +85,10 @@ def _pull_models(args) -> int:
     from .experiment.config import ExperimentConfig
     from .llm.base import ModelError
     from .llm.ollama import OllamaClient, ensure_model
+    from .experiment.runner import ollama_url
     config = ExperimentConfig.from_yaml(args.experiment)
-    client = OllamaClient(config.ollama_url)
+    client = OllamaClient(ollama_url(config))
+    print(f"Ollama: {client.base_url}")
 
     def show(p):
         total = p.get("total") or 0

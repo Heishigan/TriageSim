@@ -27,6 +27,14 @@ from .config import ExperimentConfig
 from .engine import Stopped, run_case
 
 STATES = ("created", "running", "stopping", "stopped", "completed", "failed")
+HEARTBEAT_SECONDS = 15        # a running run rewrites status.json at least this often
+STALE_AFTER_SECONDS = 120     # no heartbeat for this long: the process is gone
+
+
+def is_alive(status: dict, now: float | None = None) -> bool:
+    """True if a 'running' run's process (app, terminal or Slurm job) is still beating."""
+    beat = status.get("heartbeat")
+    return bool(beat) and (now or time.time()) - beat < STALE_AFTER_SECONDS
 
 
 def resolve_cohort(name: str, cohorts_dir: Path | None = None) -> Path:
@@ -101,9 +109,15 @@ def _upgrade(result: dict) -> dict:
     return result
 
 
+def ollama_url(config: ExperimentConfig) -> str:
+    """TRIAGESIM_OLLAMA_URL (set by the Slurm script: each job runs its own Ollama) wins."""
+    import os
+    return os.environ.get("TRIAGESIM_OLLAMA_URL") or config.ollama_url
+
+
 def build_models(config: ExperimentConfig) -> tuple[dict[str, ChatModel], Callable | None]:
     """Model objects for every agent, plus an embedding function for a retrieval patient."""
-    client = OllamaClient(config.ollama_url)
+    client = OllamaClient(ollama_url(config))
     models: dict[str, ChatModel] = {}
     for m in config.models():
         models[m.name] = DemoModel(m.name) if m.source == "demo" else OllamaModel(client, m.name)
@@ -130,8 +144,17 @@ def execute(run_dir: Path, stop: threading.Event | None = None,
     todo = [cid for cid in plan["case_ids"] if cid not in done_ids]
     if models is None:
         models, embed = build_models(config)
+    import os
+    import socket
     write_status(run_dir, state="running", total=len(plan["case_ids"]), done=len(done_ids), error=None,
-                 started=read_status(run_dir).get("started") or datetime.now().isoformat(timespec="seconds"))
+                 started=read_status(run_dir).get("started") or datetime.now().isoformat(timespec="seconds"),
+                 heartbeat=time.time(), host=socket.gethostname(), slurm_job=os.environ.get("SLURM_JOB_ID"))
+    beating = threading.Event()
+
+    def heartbeat() -> None:
+        while not beating.wait(HEARTBEAT_SECONDS):
+            write_status(run_dir, heartbeat=time.time())
+    threading.Thread(target=heartbeat, daemon=True, name="run-heartbeat").start()
 
     events = open(run_dir / "events.jsonl", "a", encoding="utf-8")
 
@@ -165,6 +188,7 @@ def execute(run_dir: Path, stop: threading.Event | None = None,
         return write_status(run_dir, state="failed", error=f"{exc!r}\n{traceback.format_exc(limit=5)}",
                             current_case=None)
     finally:
+        beating.set()
         events.close()
 
 

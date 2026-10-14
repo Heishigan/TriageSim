@@ -76,6 +76,7 @@ export type CohortSettings = {
 export type RunStatus = {
   state: string; done: number; total: number; current_case?: string | null; error?: string | null;
   created?: string; updated?: string; started?: string; finished?: string;
+  external?: boolean; host?: string; slurm_job?: string | null;
 };
 export type RunEvent = {
   type: string; case_id?: string; speaker?: string; text?: string; turn?: number; decision?: number;

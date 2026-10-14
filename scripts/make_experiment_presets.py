@@ -175,3 +175,25 @@ for name, (description, parts) in PRESETS.items():
     (out / f"{name}.yaml").write_text(yaml.safe_dump(literal(config), sort_keys=False, allow_unicode=True,
                                                      width=100), encoding="utf-8")
     print("wrote", name)
+
+
+# ---- Benchmark: same cases, prompts, patient and evaluator; only the nurse's model changes.
+BENCHMARK_NURSES = {
+    "qwen25-32b": "qwen2.5:32b",    # anchor: the thesis nurse model
+    "gemma3-27b": "gemma3:27b",     # general model ...
+    "medgemma-27b": "medgemma:27b", # ... and its medical fine-tune (same base): isolates medical training
+}
+bench = out / "benchmark"
+bench.mkdir(exist_ok=True)
+for preset in ("chart_review", "interview"):
+    description, parts = PRESETS[preset]
+    for short, model in BENCHMARK_NURSES.items():
+        nurse_part = {**parts["nurse"], "model": {"name": model, "temperature": 0.0, "seed": 42}}
+        config = {"name": f"bench_{preset}_{short}",
+                  "description": f"Benchmark: {description} Nurse model {model}.",
+                  "cohort": "elderly_falls", "ollama_url": "http://127.0.0.1:11434",
+                  "sampling": {"cases": 100, "order": "random", "seed": 42},
+                  **parts, "nurse": nurse_part}
+        (bench / f"{preset}_{short}.yaml").write_text(
+            yaml.safe_dump(literal(config), sort_keys=False, allow_unicode=True, width=100), encoding="utf-8")
+        print("wrote benchmark", preset, short)

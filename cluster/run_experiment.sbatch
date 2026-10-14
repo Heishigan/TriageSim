@@ -6,10 +6,9 @@
 #SBATCH --job-name=triagesim
 #SBATCH --partition=gpu
 #SBATCH --account=slurm-students
-#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --time=08:00:00
+#SBATCH --time=12:00:00
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --signal=B:TERM@180
 set -uo pipefail
@@ -19,7 +18,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 # ---- Ollama: one private server per job, models from a shared folder --------------
 OLLAMA="${OLLAMA_BIN:-$(command -v ollama || echo "$HOME/bin/ollama")}"
-export OLLAMA_MODELS="${OLLAMA_MODELS:-$HOME/ollama-models}"
+export OLLAMA_MODELS="${OLLAMA_MODELS:-$HOME/.ollama/models}"   # Ollama's default: reuses earlier downloads
 export OLLAMA_HOST="127.0.0.1:$((20000 + SLURM_JOB_ID % 10000))"   # own port per job
 export OLLAMA_KEEP_ALIVE=-1          # keep models loaded for the whole job
 export OLLAMA_MAX_LOADED_MODELS=3    # nurse, patient and evaluator at once if memory allows

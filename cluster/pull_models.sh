@@ -5,7 +5,7 @@
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 OLLAMA="${OLLAMA_BIN:-$(command -v ollama || echo "$HOME/bin/ollama")}"
-export OLLAMA_MODELS="${OLLAMA_MODELS:-$HOME/ollama-models}"
+export OLLAMA_MODELS="${OLLAMA_MODELS:-$HOME/.ollama/models}"
 export OLLAMA_HOST="127.0.0.1:$((20000 + RANDOM % 10000))"
 export TRIAGESIM_OLLAMA_URL="http://$OLLAMA_HOST"
 "$OLLAMA" serve > /tmp/ollama_pull_$$.log 2>&1 &

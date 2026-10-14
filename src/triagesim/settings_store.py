@@ -25,6 +25,8 @@ def load() -> dict:
     settings = {**DEFAULTS, **{k: v for k, v in data.items() if k in DEFAULTS}}
     if os.environ.get("HF_TOKEN") and not settings["hf_token"]:
         settings["hf_token"] = os.environ["HF_TOKEN"]
+    if os.environ.get("TRIAGESIM_OLLAMA_URL"):          # set by the cluster job scripts
+        settings["ollama_url"] = os.environ["TRIAGESIM_OLLAMA_URL"]
     return settings
 
 

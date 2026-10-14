@@ -232,3 +232,8 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   models (qwen2.5:32b = thesis anchor; gemma3:27b vs medgemma:27b = same base, isolates
   medical fine-tuning). Patient llama3.1:8b and evaluator qwen2.5:32b fixed; 100 cases,
   seed 42, same cohort for all runs.
+- D71. This cluster: partition gpu, account slurm-students, no GPU GRES (no --gres line),
+  internet on GPU nodes, Ollama 0.17.7 in ~/bin. Scripts use Ollama's default model folder
+  (~/.ollama/models) so thesis downloads are reused. cluster/ui.sbatch runs the app + a
+  private Ollama on a GPU node (both on 127.0.0.1), reached with an SSH tunnel via the login
+  node; TRIAGESIM_OLLAMA_URL overrides the app's Ollama setting.

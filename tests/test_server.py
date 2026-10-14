@@ -264,3 +264,20 @@ def test_run_started_elsewhere_shows_as_running(api, tmp_path):
     assert r.status_code == 409 and "scancel 12345" in r.json()["detail"]
     write_status(d, heartbeat=time.time() - 600)
     assert api.get(f"/api/runs/{run}").json()["status"]["state"] == "interrupted"
+
+
+def test_access_token_required_when_set(api, monkeypatch):
+    monkeypatch.setenv("TRIAGESIM_ACCESS_TOKEN", "s3cret")
+    assert api.get("/api/ping").status_code == 200             # launcher check stays open
+    assert api.get("/api/health").status_code == 401
+    assert api.get("/api/cohorts?token=wrong").status_code == 401
+    first = api.get("/?token=s3cret", follow_redirects=False)
+    assert first.status_code == 303 and "token" not in first.headers["location"]
+    assert api.get("/api/cohorts").status_code == 200          # cookie from the first visit
+    api.cookies.clear()
+    assert api.get("/api/cohorts").status_code == 401
+
+
+def test_no_token_means_open_locally(api, monkeypatch):
+    monkeypatch.delenv("TRIAGESIM_ACCESS_TOKEN", raising=False)
+    assert api.get("/api/cohorts").status_code == 200

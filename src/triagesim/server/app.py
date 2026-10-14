@@ -64,6 +64,30 @@ async def _lifespan(_app):
 
 
 app = FastAPI(title="TriageSim", version=__version__, lifespan=_lifespan)
+
+TOKEN_COOKIE = "triagesim_token"
+
+
+@app.middleware("http")
+async def _require_token(request, call_next):
+    """When TRIAGESIM_ACCESS_TOKEN is set (app reachable beyond this computer, e.g. on a
+    cluster node), every request needs it: once as ?token=... (stored as a cookie), then the
+    cookie. /api/ping stays open so the launcher can see the app is up; it returns no data."""
+    import hmac
+    import os
+    from fastapi.responses import PlainTextResponse, RedirectResponse
+    token = os.environ.get("TRIAGESIM_ACCESS_TOKEN", "")
+    if not token or request.url.path == "/api/ping":
+        return await call_next(request)
+    given = request.query_params.get("token")
+    if given is not None and hmac.compare_digest(given.encode(), token.encode()):
+        response = RedirectResponse(request.url.path, status_code=303)
+        response.set_cookie(TOKEN_COOKIE, token, httponly=True, samesite="strict")
+        return response
+    if hmac.compare_digest(request.cookies.get(TOKEN_COOKIE, "").encode(), token.encode()):
+        return await call_next(request)
+    return PlainTextResponse("TriageSim: open the full address with ?token=... "
+                             "(see the job log for where to find it).", status_code=401)
 jobs = JobManager()
 _tables_cache: dict[tuple, dict] = {}
 _tables_lock = threading.Lock()

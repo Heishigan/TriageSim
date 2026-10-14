@@ -19,3 +19,9 @@ def test_build(data_dir, tmp_path, capsys):
                  "--data", str(data_dir), "--output", str(out)]) == 0
     assert "First qualifying visit per patient" in capsys.readouterr().out
     assert len(list(out.iterdir())) == 1
+
+
+def test_ui_refuses_network_without_token(monkeypatch, capsys):
+    monkeypatch.delenv("TRIAGESIM_ACCESS_TOKEN", raising=False)
+    assert main(["ui", "--no-browser", "--host", "0.0.0.0"]) == 2
+    assert "access token" in capsys.readouterr().out

@@ -143,17 +143,17 @@ def _run(args) -> int:
 DEFAULT_PORT = 8765
 
 
-def _free_port(preferred: int | None = DEFAULT_PORT) -> int:
+def _free_port(preferred: int | None = DEFAULT_PORT, host: str = "127.0.0.1") -> int:
     """The preferred port if it is free (stable address between restarts), else any free one."""
     if preferred:
         with socket.socket() as sock:
             try:
-                sock.bind(("127.0.0.1", preferred))
+                sock.bind((host, preferred))
                 return preferred
             except OSError:
                 pass
     with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
+        sock.bind((host, 0))
         return sock.getsockname()[1]
 
 
@@ -181,11 +181,17 @@ def _ui(args) -> int:
         os.environ["TRIAGESIM_OUTPUT_DIR"] = str(demo / "outputs")
         os.environ["TRIAGESIM_DEMO"] = "1"
         print("DEMO MODE: invented data, no real patients.", flush=True)
-    port = args.port or _free_port()
-    url = f"http://127.0.0.1:{port}"
+    host = args.host
+    local = host in ("127.0.0.1", "localhost", "::1")
+    if not local and not os.environ.get("TRIAGESIM_ACCESS_TOKEN"):
+        print("Refusing to listen on the network without an access token: "
+              "set TRIAGESIM_ACCESS_TOKEN (see cluster/ui.sbatch).")
+        return 2
+    port = args.port or _free_port(host="127.0.0.1" if local else host)
+    url = f"http://{'127.0.0.1' if host in ('0.0.0.0', 'localhost') else host}:{port}"
     print("Starting TriageSim...", flush=True)
     proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "triagesim.server.app:app",
-                             "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"])
+                             "--host", host, "--port", str(port), "--log-level", "warning"])
     if not _wait_until_ready(url, proc):
         if proc.poll() is None:
             print(f"The app did not answer at {url} within 90 seconds.")
@@ -214,6 +220,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
     p.add_argument("--port", type=int, default=None, help=f"port (default {DEFAULT_PORT}, or a free one if taken)")
     p.add_argument("--demo", action="store_true", help="use invented demo data (demo/) instead of data/")
+    p.add_argument("--host", default="127.0.0.1",
+                   help="address to listen on (default: this computer only; anything else needs "
+                        "TRIAGESIM_ACCESS_TOKEN)")
     p.set_defaults(func=_ui)
 
     cohort = sub.add_parser("cohort", help="cohort builder").add_subparsers(dest="action", required=True)

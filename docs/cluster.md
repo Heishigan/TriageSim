@@ -77,12 +77,16 @@ stops cleanly; continue with
 sbatch cluster/ui.sbatch
 cat logs/triagesim-ui_<jobid>.out      # shows the node and the tunnel command
 ```
-On your laptop, run the printed command, e.g.
-`ssh -N -L 8765:127.0.0.1:<port> -J <you>@<login address> <you>@<node>`, then open
-http://127.0.0.1:8765. Everything works as on your PC: Models (downloads go to
-`~/.ollama/models`, shared with batch jobs), New experiment, live runs, results.
-The app and Ollama listen only on the node itself. `scancel <jobid>` stops it and frees the GPU;
-runs stopped that way can be resumed later.
+Users cannot ssh into the GPU nodes on this cluster, so the app listens on the node's
+internal address and you tunnel through the login node only. The log prints both steps:
+on your laptop `ssh -N -L 8765:<node address>:<port> <you>@slurm-login.dsv.su.se`
+(keep it open), then on the login node `cat ~/.triagesim/ui-<jobid>.url` and open that
+address. It contains a random access token, readable only by you, so other cluster users
+cannot open your app even though it is on the cluster network; the token is stored as a
+browser cookie, so afterwards http://127.0.0.1:8765 is enough. Ollama stays on the node
+itself. Everything works as on your PC: Models (downloads go to `~/.ollama/models`, shared
+with batch jobs), New experiment, live runs, results. `scancel <jobid>` stops it and frees
+the GPU; runs stopped that way can be resumed later.
 
 ## 7. Watch batch jobs in the app (optional)
 

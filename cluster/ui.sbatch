@@ -3,7 +3,10 @@
 # experiments from your browser, like on your PC. Submit from the TriageSim folder:
 #   sbatch cluster/ui.sbatch
 # Then read logs/triagesim-ui_<jobid>.out for the tunnel command to run on your laptop.
-# The app and Ollama listen on the node itself only (127.0.0.1), never on the network.
+# Users cannot ssh into the GPU nodes here, so the app listens on the node's internal
+# address, protected by a random access token that only you can read
+# (~/.triagesim/ui-<jobid>.url). Ollama stays on the node itself (127.0.0.1).
+# Set LOGIN_HOST if your login node has another address.
 #SBATCH --job-name=triagesim-ui
 #SBATCH --partition=gpu
 #SBATCH --account=slurm-students
@@ -27,18 +30,28 @@ for _ in $(seq 90); do curl -s "$TRIAGESIM_OLLAMA_URL/api/version" >/dev/null &&
 
 PORT=$((30000 + SLURM_JOB_ID % 10000))
 NODE=$(hostname)
+NODE_IP=$(hostname -I | awk '{print $1}')
+LOGIN_HOST="${LOGIN_HOST:-slurm-login.dsv.su.se}"
+export TRIAGESIM_ACCESS_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+umask 077
+mkdir -p "$HOME/.triagesim"
+URL_FILE="$HOME/.triagesim/ui-$SLURM_JOB_ID.url"
+echo "http://127.0.0.1:8765/?token=$TRIAGESIM_ACCESS_TOKEN" > "$URL_FILE"
+umask 022
 cat <<MSG
 ============================================================================
 TriageSim is starting on $NODE (job $SLURM_JOB_ID). GPU:
 $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "  (nvidia-smi not found)")
 
-On your laptop, open a terminal and run (keep it open):
-    ssh -N -L 8765:127.0.0.1:$PORT -J $USER@<login address> $USER@$NODE
-Then open  http://127.0.0.1:8765  in your browser.
+1. On your laptop, open a terminal and run (keep it open):
+       ssh -N -L 8765:$NODE_IP:$PORT $USER@$LOGIN_HOST
+2. On the login node, get your private address (contains the access token):
+       cat ~/.triagesim/ui-$SLURM_JOB_ID.url
+   and open it in your browser. Afterwards http://127.0.0.1:8765 is enough.
 
 Stop the app when done (frees the GPU):  scancel $SLURM_JOB_ID
 Runs started in the app stop with it; resume them later from the app.
 ============================================================================
 MSG
-trap 'kill "$OLLAMA_PID" 2>/dev/null' EXIT
-uv run --frozen triagesim ui --no-browser --port "$PORT"
+trap 'kill "$OLLAMA_PID" 2>/dev/null; rm -f "$URL_FILE"' EXIT
+uv run --frozen triagesim ui --no-browser --host "$NODE_IP" --port "$PORT"

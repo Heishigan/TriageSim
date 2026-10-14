@@ -27,7 +27,7 @@ from ..cohort.settings import CohortSettings
 from ..cohort.sources import PURPOSES, DataLoadError, check_data, layout_tree, load_tables
 from ..experiment.config import ExperimentConfig
 from ..experiment.fields import FIELDS
-from ..experiment.runner import create_run, execute, list_runs, read_results, read_status
+from ..experiment.runner import create_run, execute, is_alive, list_runs, read_results, read_status
 from ..llm.base import ModelError
 from ..llm.demo import DemoModel
 from ..llm.ollama import (INSTALL_HELP, OllamaClient, OllamaModel, detect_gpus, ensure_model, find_ollama,
@@ -64,6 +64,30 @@ async def _lifespan(_app):
 
 
 app = FastAPI(title="TriageSim", version=__version__, lifespan=_lifespan)
+
+TOKEN_COOKIE = "triagesim_token"
+
+
+@app.middleware("http")
+async def _require_token(request, call_next):
+    """When TRIAGESIM_ACCESS_TOKEN is set (app reachable beyond this computer, e.g. on a
+    cluster node), every request needs it: once as ?token=... (stored as a cookie), then the
+    cookie. /api/ping stays open so the launcher can see the app is up; it returns no data."""
+    import hmac
+    import os
+    from fastapi.responses import PlainTextResponse, RedirectResponse
+    token = os.environ.get("TRIAGESIM_ACCESS_TOKEN", "")
+    if not token or request.url.path == "/api/ping":
+        return await call_next(request)
+    given = request.query_params.get("token")
+    if given is not None and hmac.compare_digest(given.encode(), token.encode()):
+        response = RedirectResponse(request.url.path, status_code=303)
+        response.set_cookie(TOKEN_COOKIE, token, httponly=True, samesite="strict")
+        return response
+    if hmac.compare_digest(request.cookies.get(TOKEN_COOKIE, "").encode(), token.encode()):
+        return await call_next(request)
+    return PlainTextResponse("TriageSim: open the full address with ?token=... "
+                             "(see the job log for where to find it).", status_code=401)
 jobs = JobManager()
 _tables_cache: dict[tuple, dict] = {}
 _tables_lock = threading.Lock()
@@ -580,8 +604,11 @@ def runs() -> list[dict]:
     for d in list_runs():
         st = read_status(d)
         cfg = yaml.safe_load((d / "experiment.yaml").read_text(encoding="utf-8")) or {}
+        state = st.get("state")
+        if state in ("running", "stopping") and not jobs.get(d.name) and not is_alive(st):
+            state = "interrupted"
         out.append({"name": d.name, "experiment": cfg.get("name"), "mode": cfg.get("nurse", {}).get("mode"),
-                    **{k: st.get(k) for k in ("state", "done", "total", "created", "updated")}})
+                    **{k: st.get(k) for k in ("done", "total", "created", "updated")}, "state": state})
     return out
 
 
@@ -591,7 +618,10 @@ def run_detail(name: str) -> dict:
     status = read_status(d)
     job = jobs.get(name)
     if status.get("state") in ("running", "stopping") and not (job and job.state == "running"):
-        status["state"] = "interrupted"     # the app was closed while it ran; it can be resumed
+        if is_alive(status):
+            status["external"] = True        # running elsewhere (terminal or Slurm job); watch only
+        else:
+            status["state"] = "interrupted"  # its process is gone; it can be resumed
     return {"name": name, "status": status,
             "config": yaml.safe_load((d / "experiment.yaml").read_text(encoding="utf-8")),
             "plan": _read_json(d / "plan.json")}
@@ -599,7 +629,10 @@ def run_detail(name: str) -> dict:
 
 @app.post("/api/runs/{name}/stop")
 def stop_run(name: str) -> dict:
-    _run_dir(name)
+    d = _run_dir(name)
+    status = read_status(d)
+    if not jobs.get(name) and is_alive(status) and status.get("slurm_job"):
+        raise HTTPException(409, f"This run is a Slurm job; stop it on the cluster with: scancel {status['slurm_job']}")
     job = jobs.get(name)
     if job and job.state == "running":
         job.stop.set()
@@ -632,9 +665,11 @@ async def run_events(name: str, after: int = 0):
             for line in lines[sent:]:
                 sent += 1
                 yield f"id: {sent}\ndata: {line}\n\n"
-            state = read_status(d).get("state")
+            status = read_status(d)
+            state = status.get("state")
             job = jobs.get(name)
-            if state not in ("running", "created", "stopping") or (job and job.state != "running" and idle > 2):
+            gone = (job is None or job.state != "running") and not is_alive(status) and idle > 2
+            if state not in ("running", "created", "stopping") or gone:
                 yield f"event: end\ndata: {json.dumps({'state': state})}\n\n"
                 return
             idle = idle + 1 if len(lines) == sent else 0

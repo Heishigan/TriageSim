@@ -243,3 +243,41 @@ def test_delete_model_endpoint(api, monkeypatch):
     monkeypatch.setattr(OllamaClient, "delete", lambda self, name: deleted.append(name))
     assert api.delete("/api/models/llama3.2:3b").json() == {"deleted": "llama3.2:3b"}
     assert deleted == ["llama3.2:3b"]
+
+
+def test_run_started_elsewhere_shows_as_running(api, tmp_path):
+    """A run executed by a Slurm job (not by this app) is 'running' while its heartbeat is fresh."""
+    import json as _json
+    from triagesim.experiment.runner import write_status
+    name = cohort_with_cases(api)
+    preset = next(p for p in api.get("/api/experiment-presets").json() if p["name"] == "chart_review")
+    run = api.post("/api/runs", json=demo(preset["config"]) | {"cohort": name}).json()["name"]
+    wait_job(api, run)
+    from triagesim import paths
+    d = paths.runs_dir() / run
+    write_status(d, state="running", heartbeat=time.time(), slurm_job="12345")
+    api_jobs = __import__("triagesim.server.app", fromlist=["jobs"]).jobs
+    api_jobs._jobs.pop(run, None)                      # as if another process ran it
+    st = api.get(f"/api/runs/{run}").json()["status"]
+    assert st["state"] == "running" and st["external"]
+    r = api.post(f"/api/runs/{run}/stop")
+    assert r.status_code == 409 and "scancel 12345" in r.json()["detail"]
+    write_status(d, heartbeat=time.time() - 600)
+    assert api.get(f"/api/runs/{run}").json()["status"]["state"] == "interrupted"
+
+
+def test_access_token_required_when_set(api, monkeypatch):
+    monkeypatch.setenv("TRIAGESIM_ACCESS_TOKEN", "s3cret")
+    assert api.get("/api/ping").status_code == 200             # launcher check stays open
+    assert api.get("/api/health").status_code == 401
+    assert api.get("/api/cohorts?token=wrong").status_code == 401
+    first = api.get("/?token=s3cret", follow_redirects=False)
+    assert first.status_code == 303 and "token" not in first.headers["location"]
+    assert api.get("/api/cohorts").status_code == 200          # cookie from the first visit
+    api.cookies.clear()
+    assert api.get("/api/cohorts").status_code == 401
+
+
+def test_no_token_means_open_locally(api, monkeypatch):
+    monkeypatch.delenv("TRIAGESIM_ACCESS_TOKEN", raising=False)
+    assert api.get("/api/cohorts").status_code == 200

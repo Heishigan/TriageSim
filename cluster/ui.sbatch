@@ -36,7 +36,7 @@ export TRIAGESIM_ACCESS_TOKEN=$(python3 -c "import secrets; print(secrets.token_
 umask 077
 mkdir -p "$HOME/.triagesim"
 URL_FILE="$HOME/.triagesim/ui-$SLURM_JOB_ID.url"
-echo "http://127.0.0.1:8765/?token=$TRIAGESIM_ACCESS_TOKEN" > "$URL_FILE"
+echo "http://127.0.0.1:18765/?token=$TRIAGESIM_ACCESS_TOKEN" > "$URL_FILE"
 umask 022
 cat <<MSG
 ============================================================================
@@ -44,10 +44,10 @@ TriageSim is starting on $NODE (job $SLURM_JOB_ID). GPU:
 $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "  (nvidia-smi not found)")
 
 1. On your laptop, open a terminal and run (keep it open):
-       ssh -N -L 8765:$NODE_IP:$PORT $USER@$LOGIN_HOST
+       ssh -N -L 18765:$NODE_IP:$PORT $USER@$LOGIN_HOST
 2. On the login node, get your private address (contains the access token):
        cat ~/.triagesim/ui-$SLURM_JOB_ID.url
-   and open it in your browser. Afterwards http://127.0.0.1:8765 is enough.
+   and open it in your browser. Afterwards http://127.0.0.1:18765 is enough.
 
 Stop the app when done (frees the GPU):  scancel $SLURM_JOB_ID
 Runs started in the app stop with it; resume them later from the app.

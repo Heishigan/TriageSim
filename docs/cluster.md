@@ -79,11 +79,11 @@ cat logs/triagesim-ui_<jobid>.out      # shows the node and the tunnel command
 ```
 Users cannot ssh into the GPU nodes on this cluster, so the app listens on the node's
 internal address and you tunnel through the login node only. The log prints both steps:
-on your laptop `ssh -N -L 8765:<node address>:<port> <you>@slurm-login.dsv.su.se`
+on your laptop `ssh -N -L 18765:<node address>:<port> <you>@slurm-login.dsv.su.se`
 (keep it open), then on the login node `cat ~/.triagesim/ui-<jobid>.url` and open that
 address. It contains a random access token, readable only by you, so other cluster users
 cannot open your app even though it is on the cluster network; the token is stored as a
-browser cookie, so afterwards http://127.0.0.1:8765 is enough. Ollama stays on the node
+browser cookie, so afterwards http://127.0.0.1:18765 is enough (18765, not 8765: Windows often reserves 8765). Ollama stays on the node
 itself. Everything works as on your PC: Models (downloads go to `~/.ollama/models`, shared
 with batch jobs), New experiment, live runs, results. `scancel <jobid>` stops it and frees
 the GPU; runs stopped that way can be resumed later.

@@ -237,3 +237,16 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   (~/.ollama/models) so thesis downloads are reused. cluster/ui.sbatch runs the app + a
   private Ollama on a GPU node (both on 127.0.0.1), reached with an SSH tunnel via the login
   node; TRIAGESIM_OLLAMA_URL overrides the app's Ollama setting.
+
+## Deleting, runs list, one interview preset (2026-10-15)
+- D72. Runs and cohorts can be deleted from the app, after a confirmation dialog that says
+  what goes (results, transcripts, case files) and that it cannot be undone. A running run (in
+  the app or a Slurm job with a fresh heartbeat) cannot be deleted; a cohort cannot be deleted
+  while case files are being built for it or a running run uses it. Finished runs made from a
+  cohort are listed in the dialog: their results stay, but they can no longer be resumed.
+  Model deletion uses the same dialog instead of the browser's confirm box.
+- D73. The runs list shows Type (e.g. "Interview · random personas", "Chart review")
+  and the model of each agent taking part, instead of the experiment name and nurse mode.
+- D74. One interview preset instead of three: patient type (language model or retrieval
+  only) and persona (fixed or random per case) are options in the form, so
+  interview_personas and retrieval_patient are removed. Runs keep their own settings.

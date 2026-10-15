@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { Wilson } from "../api";
 
 export function Page({ title, subtitle, actions, children }:
@@ -32,7 +32,8 @@ export function Card({ title, actions, children, className = "" }:
   );
 }
 
-type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" | "ghost" };
+type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" | "ghost";
+  ref?: React.Ref<HTMLButtonElement> };
 export function Button({ variant = "secondary", className = "", ...props }: ButtonProps) {
   const styles = {
     primary: "bg-brand-600 text-white hover:bg-brand-700 disabled:bg-slate-300",
@@ -123,4 +124,46 @@ export function Table({ head, rows, empty = "Nothing yet." }: { head: ReactNode[
 
 export function Spinner() {
   return <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600" />;
+}
+
+/** A confirmation dialog for destructive actions. `onConfirm` may throw; its message is shown
+ * in the dialog and the dialog stays open. Escape or Cancel closes it; Cancel has the focus. */
+export function ConfirmDialog({ title, children, confirmLabel = "Delete", onConfirm, onClose }:
+  { title: string; children: ReactNode; confirmLabel?: string; onConfirm: () => Promise<void>; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  const close = useRef(onClose);
+  close.current = busy ? () => {} : onClose;          // never close while deleting
+  useEffect(() => { cancel.current?.focus(); }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close.current(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const confirm = async () => {
+    setBusy(true); setError(null);
+    try { await onConfirm(); } catch (e) { setError((e as Error).message); setBusy(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) close.current(); }}>
+      <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"
+        className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+        <h2 id="confirm-title" className="text-base font-semibold text-slate-900">{title}</h2>
+        <div className="mt-3 space-y-2 text-sm text-slate-600">{children}</div>
+        {error && <div className="mt-4"><Alert kind="error">{error}</Alert></div>}
+        <div className="mt-6 flex justify-end gap-2">
+          <Button ref={cancel} disabled={busy} onClick={onClose}>Cancel</Button>
+          <Button variant="danger" disabled={busy} onClick={confirm}>{busy ? "Deleting…" : confirmLabel}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A small red text button for table rows. */
+export function DeleteLink({ disabled, title, onClick }: { disabled?: boolean; title?: string; onClick: () => void }) {
+  return <button className="text-sm font-medium text-rose-600 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline"
+    disabled={disabled} title={title} onClick={onClick}>Delete</button>;
 }

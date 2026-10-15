@@ -118,14 +118,14 @@ def test_retrieval_patient_answers_from_retrieved_passages(case):
         return [[t.lower().count(w) + 0.01 for w in vocab] for t in texts]
     nurse = doctor([ASK("What medications do you take?"), DECIDE(2)])
     patient = FakeModel("llama3.1:8b", ["I take apixaban."])
-    r = run_case(case, config("retrieval_patient"), {"qwen2.5:32b": nurse, "llama3.1:8b": patient}, embed=embed)
+    r = run_case(case, config("interview", **{"patient.mode": "retrieval"}), {"qwen2.5:32b": nurse, "llama3.1:8b": patient}, embed=embed)
     answer = [m for m in r["transcript"] if m["speaker"] == "patient"][1]
     assert any("Apixaban" in p for p in answer["retrieved"])
     assert "Facts:" in patient.calls[-1][0].content
 
 
 def test_random_persona_is_reproducible(case):
-    c = config("interview_personas")
+    c = config("interview", **{"patient.persona": "random"})
     first = run_case(case, c, models(doctor([DECIDE(2)])))["persona"]
     again = run_case(case, c, models(doctor([DECIDE(2)])))["persona"]
     assert first == again and first in {"cooperative", "stoic", "anxious", "confused"}

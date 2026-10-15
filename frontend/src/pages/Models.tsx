@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { type Job, api, post, put, useApi } from "../api";
-import { Alert, Badge, Button, Card, Field, Page, Progress, Spinner, Table, inputClass } from "../components/ui";
+import { Alert, Badge, Button, Card, ConfirmDialog, DeleteLink, Field, Page, Progress, Spinner, Table, inputClass } from "../components/ui";
 import { OllamaAction, type OllamaStatus } from "../components/ollama";
 
 type ModelList = { reachable: boolean; error?: string; models: { name: string; size: number; modified: string }[]; downloads: Job[] };
@@ -168,20 +168,20 @@ function Download() {
 }
 
 function DeleteButton({ name, size, onDeleted }: { name: string; size: number; onDeleted: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const remove = async () => {
-    const ok = window.confirm(`Delete ${name} from this computer?\n\nThis frees about ${gb(size)} of disk space. `
-      + "Past results are not affected, and you can download the model again later.");
-    if (!ok) return;
-    setBusy(true);
-    try {
-      await api(`/models/${encodeURIComponent(name)}`, { method: "DELETE" });
-      onDeleted();
-    } catch (e) { window.alert((e as Error).message); }
-    setBusy(false);
-  };
-  return <button className="text-sm font-medium text-rose-600 hover:underline disabled:text-slate-400" disabled={busy} onClick={remove}>
-    {busy ? "Deleting…" : "Delete"}</button>;
+  const [open, setOpen] = useState(false);
+  return <>
+    <DeleteLink onClick={() => setOpen(true)} />
+    {open && (
+      <ConfirmDialog title={`Delete ${name}?`} confirmLabel="Delete model" onClose={() => setOpen(false)}
+        onConfirm={async () => {
+          await api(`/models/${encodeURIComponent(name)}`, { method: "DELETE" });
+          setOpen(false);
+          onDeleted();
+        }}>
+        <p>This removes the model from Ollama and frees about {gb(size)} of disk space.</p>
+        <p>Past results are not affected, and you can download the model again later.</p>
+      </ConfirmDialog>)}
+  </>;
 }
 
 function TestButton({ name }: { name: string }) {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { type CohortSettings, post, useApi } from "../api";
-import { Alert, Button, Card, Field, Page, Spinner, Table, inputClass } from "../components/ui";
+import { type CohortSettings, api, post, useApi } from "../api";
+import { Alert, Button, Card, ConfirmDialog, DeleteLink, Field, Page, Spinner, Table, inputClass } from "../components/ui";
 
 type Preset = { name: string; settings: CohortSettings };
 type Cohort = { name: string; created: string; patients: number | null; cases: number | null };
@@ -30,19 +30,44 @@ export default function Cohorts() {
   const cohorts = useApi<Cohort[]>("/cohorts");
   const presets = useApi<Preset[]>("/cohort-presets").data ?? [];
   const [building, setBuilding] = useState(false);
+  const [deleting, setDeleting] = useState<Cohort | null>(null);
   return (
     <Page title="2. Cohorts & cases" subtitle="Choose which ED visits to study, then turn them into case files for the agents."
       actions={!building && <Button variant="primary" onClick={() => setBuilding(true)}>New cohort</Button>}>
       {building && <Builder presets={presets} onCancel={() => setBuilding(false)} />}
       <Card title="Saved cohorts">
-        <Table head={["Cohort", "Created", "Patients", "Case files"]}
+        <Table head={["Cohort", "Created", "Patients", "Case files", ""]}
           rows={(cohorts.data ?? []).map((c) => [
             <Link className="font-medium text-brand-600 hover:underline" to={`/cohorts/${c.name}`}>{c.name}</Link>,
             c.created?.replace("T", " "), c.patients?.toLocaleString(),
-            c.cases ? `${c.cases.toLocaleString()} cases` : <span className="text-slate-400">not built yet</span>])}
+            c.cases ? `${c.cases.toLocaleString()} cases` : <span className="text-slate-400">not built yet</span>,
+            <DeleteLink onClick={() => setDeleting(c)} />])}
           empty="No cohorts yet. Click New cohort." />
       </Card>
+      {deleting && <DeleteCohort cohort={deleting} onClose={() => setDeleting(null)}
+        onDeleted={() => { setDeleting(null); cohorts.reload(); }} />}
     </Page>
+  );
+}
+
+function DeleteCohort({ cohort, onClose, onDeleted }: { cohort: Cohort; onClose: () => void; onDeleted: () => void }) {
+  const runs = useApi<{ name: string; active: boolean }[]>(`/cohorts/${encodeURIComponent(cohort.name)}/runs`);
+  const used = runs.data ?? [];
+  return (
+    <ConfirmDialog title={`Delete cohort ${cohort.name}?`} confirmLabel="Delete cohort" onClose={onClose}
+      onConfirm={async () => { await api(`/cohorts/${encodeURIComponent(cohort.name)}`, { method: "DELETE" }); onDeleted(); }}>
+      <p>{cohort.patients?.toLocaleString() ?? "?"} patients{cohort.cases ? `, ${cohort.cases.toLocaleString()} case files` : ""}.
+        This permanently deletes the cohort and its case files from this computer. It cannot be undone.</p>
+      <p>The MIMIC data files are not affected; you can build the cohort again.</p>
+      {runs.error ? <Alert kind="warning">Could not check which runs use this cohort: {runs.error}</Alert>
+        : runs.data === null ? <p className="text-slate-400">Checking which runs use it…</p>
+        : used.length > 0 && (
+          <Alert kind="warning">
+            <p className="font-medium">{used.length} run{used.length > 1 ? "s use" : " uses"} this cohort.</p>
+            <p className="mt-1">Their results stay, but they can no longer be resumed or show case details:</p>
+            <ul className="mt-1 list-disc pl-5 text-xs">{used.map((r) => <li key={r.name}><code>{r.name}</code>{r.active ? " (running)" : ""}</li>)}</ul>
+          </Alert>)}
+    </ConfirmDialog>
   );
 }
 

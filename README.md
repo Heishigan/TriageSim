@@ -53,9 +53,7 @@ are never committed to git.
 
 | Preset | What happens |
 |---|---|
-| `interview` | The nurse interviews an open, cooperative patient |
-| `interview_personas` | The patient gets a persona per case (stoic, anxious, confused, cooperative) |
-| `retrieval_patient` | The patient may only answer from retrieved passages of its record |
+| `interview` | The nurse interviews a simulated patient. In the form: the patient type (language model in character, or retrieval only, answering from retrieved passages of its record) and the persona (neutral, one fixed persona, or `random` per case: stoic, anxious, confused, cooperative) |
 | `chart_review` | The nurse reads the chart and decides, no conversation |
 | `multiple_choice` | The same information as a board-style question |
 

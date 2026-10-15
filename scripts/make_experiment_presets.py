@@ -128,14 +128,10 @@ EVAL = {"enabled": True, "model": {"name": QWEN, "temperature": 0.0, "seed": 42}
 NURSE_SEES = ["age", "sex", "chief_complaint", "arrival_transport", "vitals"]
 
 PRESETS = {
-    "interview": ("Nurse interviews an open, cooperative patient.",
+    # One interview preset: patient type (language model or retrieval) and persona (fixed or
+    # random per case) are options in the form, not separate presets.
+    "interview": ("Nurse interviews a simulated patient. Choose the patient type and persona below.",
                   {"nurse": nurse("interview", NURSE_INTERVIEW, NURSE_SEES), "patient": patient(), "evaluator": EVAL}),
-    "interview_personas": ("Nurse interviews a patient with a randomly drawn persona per case.",
-                           {"nurse": nurse("interview", NURSE_INTERVIEW, NURSE_SEES),
-                            "patient": patient("random"), "evaluator": EVAL}),
-    "retrieval_patient": ("Nurse interviews a patient who can only answer from retrieved passages of the record.",
-                          {"nurse": nurse("interview", NURSE_INTERVIEW, NURSE_SEES),
-                           "patient": patient(mode="retrieval"), "evaluator": EVAL}),
     "chart_review": ("Nurse reads the chart and decides, without talking to the patient.",
                      {"nurse": nurse("chart_review", NURSE_CHART,
                                      ["age", "sex", "chief_complaint", "arrival_transport", "vitals", "hpi",

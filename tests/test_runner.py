@@ -82,7 +82,7 @@ def test_sampling_is_reproducible(cohorts, tmp_path):
     assert json.loads((a / "plan.json").read_text())["case_ids"] == json.loads((b / "plan.json").read_text())["case_ids"]
 
 
-@pytest.mark.parametrize("preset", ["interview_personas", "retrieval_patient", "chart_review", "multiple_choice"])
+@pytest.mark.parametrize("preset", ["interview", "chart_review", "multiple_choice"])
 def test_every_preset_runs_with_the_demo_model(cohorts, tmp_path, preset):
     run_dir = create_run(demo_config(preset), tmp_path / "runs", cohorts)
     assert execute(run_dir)["state"] == "completed"

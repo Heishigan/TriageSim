@@ -1,5 +1,5 @@
 name: interview
-description: Nurse interviews an open, cooperative patient.
+description: Nurse interviews a simulated patient. Choose the patient type and persona below.
 cohort: elderly_falls
 ollama_url: http://127.0.0.1:11434
 sampling:

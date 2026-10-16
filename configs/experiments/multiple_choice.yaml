@@ -4,7 +4,7 @@ cohort: elderly_falls
 ollama_url: http://127.0.0.1:11434
 sampling:
   cases: 20
-  order: random
+  order: stratified
   seed: 42
 nurse:
   mode: multiple_choice

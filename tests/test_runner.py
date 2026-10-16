@@ -117,3 +117,46 @@ def test_heartbeat_tells_running_from_gone(cohorts, tmp_path, monkeypatch):
     execute(run_dir, on_event=slow)
     assert beats and all(b for b in beats)
     assert read_status(run_dir)["host"]
+
+
+def _cases(levels: dict[int, int]) -> list[dict]:
+    out, n = [], 0
+    for esi, count in levels.items():
+        for _ in range(count):
+            n += 1
+            out.append({"case_id": f"case-{n:05d}", "reference": {"esi": esi}})
+    return out
+
+
+def test_allocation_keeps_the_cohort_mix():
+    from triagesim.experiment.runner import allocate
+    cohort = {1: 633, 2: 3811, 3: 2970, 4: 61}            # the ESI mix of the falls cohort
+    pool = {1: 500, 2: 2900, 3: 2300, 4: 50}
+    a = allocate(1000, cohort, pool)
+    assert sum(a.values()) == 1000
+    assert a == {1: 85, 2: 510, 3: 397, 4: 8}               # 8.5 / 51.0 / 39.7 / 0.8 %
+    assert sum(allocate(20, cohort, pool).values()) == 20
+    short = allocate(1000, cohort, {1: 10, 2: 2900, 3: 2300, 4: 50})   # too few ESI 1 cases
+    assert short[1] == 10 and sum(short.values()) == 1000
+
+
+def test_stratified_sample_is_reproducible_and_interleaved():
+    from triagesim.experiment.runner import sample_case_ids
+    cases = _cases({1: 100, 2: 600, 3: 470, 4: 10})
+    config = demo_config(cases=200, order="stratified", seed=42)
+    target = {1: 633, 2: 3811, 3: 2970, 4: 61}
+    ids = sample_case_ids(cases, config, target)
+    assert ids == sample_case_ids(cases, config, target) and len(set(ids)) == 200
+    esi = {c["case_id"]: c["reference"]["esi"] for c in cases}
+    counts = {k: sum(esi[i] == k for i in ids) for k in (1, 2, 3, 4)}
+    assert counts == {1: 17, 2: 102, 3: 79, 4: 2}
+    first_half = [esi[i] for i in ids[:100]]
+    assert 30 <= first_half.count(2) <= 70                  # levels are mixed, not in blocks
+    other = sample_case_ids(cases, demo_config(cases=200, order="stratified", seed=7), target)
+    assert set(other) != set(ids)
+
+
+def test_stratified_run_records_the_mix(cohorts, tmp_path):
+    run_dir = create_run(demo_config(cases=1, order="stratified"), tmp_path / "runs", cohorts)
+    plan = json.loads((run_dir / "plan.json").read_text())
+    assert plan["stratified_by"] == "esi" and sum(plan["sample_esi"].values()) == 1

@@ -250,3 +250,11 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
 - D74. One interview preset instead of three: patient type (language model or retrieval
   only) and persona (fixed or random per case) are options in the form, so
   interview_personas and retrieval_patient are removed. Runs keep their own settings.
+
+## Stratified sampling (2026-10-16)
+- D75. New sampling option 'stratified' (now the preset default): a seeded random sample with
+  the same ESI distribution as the filtered cohort (cohort.csv), allocated by largest remainder;
+  a level with too few cases gives its share to the others in proportion. The levels are
+  interleaved in seeded random order, so a run stopped part-way is still roughly representative.
+  The cohort's and the sample's ESI counts are saved in plan.json. Every run with the same cohort,
+  size and seed gets the same cases (paired comparisons).

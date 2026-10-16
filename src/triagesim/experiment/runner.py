@@ -51,17 +51,84 @@ def resolve_cohort(name: str, cohorts_dir: Path | None = None) -> Path:
     return candidates[0]
 
 
-def sample_case_ids(cases: list[dict], config: ExperimentConfig) -> list[str]:
-    ids = [c["case_id"] for c in cases if c["reference"]["esi"] is not None]
-    if config.sampling.order == "random":
-        random.Random(config.sampling.seed).shuffle(ids)
-    return ids[: config.sampling.cases] if config.sampling.cases else ids
+def esi_distribution(cohort_dir: Path) -> dict[int, int]:
+    """ESI level -> number of ED stays in the cohort (the filtered cohort, before case building)."""
+    import pandas as pd
+    acuity = pd.read_csv(Path(cohort_dir) / "cohort.csv", usecols=["acuity"])["acuity"].dropna()
+    return {int(k): int(v) for k, v in acuity.astype(int).value_counts().sort_index().items()}
+
+
+def allocate(n: int, target: dict[int, int], available: dict[int, int]) -> dict[int, int]:
+    """Split n cases over ESI levels in proportion to ``target`` (largest remainder), never taking
+    more than a level has; what a level cannot supply goes to the others, again in proportion."""
+    alloc = {k: 0 for k in target}
+    remaining, open_levels = n, {k for k in target if available.get(k, 0) > 0 and target[k] > 0}
+    while remaining > 0 and open_levels:
+        total = sum(target[k] for k in open_levels)
+        exact = {k: remaining * target[k] / total for k in open_levels}
+        share = {k: int(exact[k]) for k in open_levels}
+        for k in sorted(open_levels, key=lambda k: (-(exact[k] - share[k]), k))[: remaining - sum(share.values())]:
+            share[k] += 1
+        for k in list(open_levels):
+            take = min(share[k], available[k] - alloc[k])
+            alloc[k] += take
+            remaining -= take
+            if alloc[k] >= available[k]:
+                open_levels.discard(k)
+        if all(share[k] == 0 for k in share):
+            break
+    return {k: v for k, v in alloc.items() if v}
+
+
+def sample_case_ids(cases: list[dict], config: ExperimentConfig, target: dict[int, int] | None = None) -> list[str]:
+    """The cases of a run, in run order. 'stratified' keeps the ESI mix of ``target`` (the cohort's
+    distribution, or the cases' own if not given) and interleaves the levels in seeded random order,
+    so a run stopped part-way is still roughly representative."""
+    usable = [c for c in cases if c["reference"]["esi"] is not None]
+    ids = [c["case_id"] for c in usable]
+    s = config.sampling
+    if s.order == "first":
+        return ids[: s.cases] if s.cases else ids
+    rng = random.Random(s.seed)
+    if s.order == "random" or not s.cases or s.cases >= len(ids):
+        rng.shuffle(ids)
+        return ids[: s.cases] if s.cases else ids
+    by_level: dict[int, list[str]] = {}
+    for c in usable:
+        by_level.setdefault(int(c["reference"]["esi"]), []).append(c["case_id"])
+    target = target or {k: len(v) for k, v in by_level.items()}
+    alloc = allocate(s.cases, target, {k: len(v) for k, v in by_level.items()})
+    chosen = []
+    for level in sorted(alloc):
+        pool = by_level[level][:]
+        rng.shuffle(pool)
+        chosen += pool[: alloc[level]]
+    rng.shuffle(chosen)
+    return chosen
 
 
 def create_run(config: ExperimentConfig, runs_dir: Path | None = None, cohorts_dir: Path | None = None) -> Path:
     """Prepare a run folder: settings, cohort and the planned cases."""
     cohort_dir = resolve_cohort(config.cohort, cohorts_dir)
-    case_ids = sample_case_ids(load_cases(cohort_dir), config)
+    cases = load_cases(cohort_dir)
+    plan_extra = {}
+    if config.sampling.order == "stratified":
+        try:
+            target = esi_distribution(cohort_dir)
+        except (FileNotFoundError, ValueError):     # no cohort.csv: use the cases' own mix
+            target = {}
+            for c in cases:
+                if c["reference"]["esi"] is not None:
+                    target[int(c["reference"]["esi"])] = target.get(int(c["reference"]["esi"]), 0) + 1
+        case_ids = sample_case_ids(cases, config, target)
+        esi_of = {c["case_id"]: int(c["reference"]["esi"]) for c in cases if c["reference"]["esi"] is not None}
+        got: dict[int, int] = {}
+        for cid in case_ids:
+            got[esi_of[cid]] = got.get(esi_of[cid], 0) + 1
+        plan_extra = {"stratified_by": "esi", "cohort_esi": {str(k): v for k, v in target.items()},
+                      "sample_esi": {str(k): got[k] for k in sorted(got)}}
+    else:
+        case_ids = sample_case_ids(cases, config)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     root = runs_dir or paths.runs_dir()
     run_dir = root / f"{config.name}_{stamp}"
@@ -70,7 +137,8 @@ def create_run(config: ExperimentConfig, runs_dir: Path | None = None, cohorts_d
         run_dir, n = root / f"{config.name}_{stamp}-{n}", n + 1
     run_dir.mkdir(parents=True)
     config.to_yaml(run_dir / "experiment.yaml")
-    (run_dir / "plan.json").write_text(json.dumps({"cohort_dir": str(cohort_dir), "case_ids": case_ids}, indent=2))
+    (run_dir / "plan.json").write_text(json.dumps({"cohort_dir": str(cohort_dir), **plan_extra, "case_ids": case_ids},
+                                                  indent=2))
     write_status(run_dir, state="created", total=len(case_ids), done=0, version=__version__,
                  created=datetime.now().isoformat(timespec="seconds"))
     return run_dir

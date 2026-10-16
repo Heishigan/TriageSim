@@ -104,10 +104,12 @@ export default function NewExperiment() {
           <Field label="Number of cases" hint="Empty = all cases">
             <input type="number" min={1} className={inputClass} value={config.sampling.cases ?? ""}
               onChange={(e) => set("sampling.cases", e.target.value === "" ? null : Number(e.target.value))} /></Field>
-          <Field label="Which cases" hint="Random is seeded, so it is reproducible">
+          <Field label="Which cases" hint={config.sampling.order === "stratified"
+            ? "Same ESI mix as the cohort; seeded, so every run with this seed gets the same cases"
+            : "Random is seeded, so it is reproducible"}>
             <div className="flex gap-2">
               <select className={inputClass} value={config.sampling.order} onChange={(e) => set("sampling.order", e.target.value)}>
-                <option value="random">Random sample</option><option value="first">First cases</option></select>
+                <option value="stratified">Stratified by ESI</option><option value="random">Random sample</option><option value="first">First cases</option></select>
               <input type="number" title="Seed" className={`${inputClass} w-24`} value={config.sampling.seed} onChange={(e) => set("sampling.seed", Number(e.target.value))} />
             </div></Field>
         </div>

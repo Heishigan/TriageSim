@@ -80,10 +80,15 @@ def allocate(n: int, target: dict[int, int], available: dict[int, int]) -> dict[
     return {k: v for k, v in alloc.items() if v}
 
 
+def _hi(case: dict):
+    return case["reference"].get("head_injury_icd")
+
+
 def sample_case_ids(cases: list[dict], config: ExperimentConfig, target: dict[int, int] | None = None) -> list[str]:
     """The cases of a run, in run order. 'stratified' keeps the ESI mix of ``target`` (the cohort's
-    distribution, or the cases' own if not given) and interleaves the levels in seeded random order,
-    so a run stopped part-way is still roughly representative."""
+    distribution, or the cases' own if not given); with ``stratify_head_injury`` it also keeps, within
+    each ESI level, the case pool's share of head-injury cases. Strata are interleaved in seeded
+    random order, so a run stopped part-way is still roughly representative."""
     usable = [c for c in cases if c["reference"]["esi"] is not None]
     ids = [c["case_id"] for c in usable]
     s = config.sampling
@@ -93,42 +98,130 @@ def sample_case_ids(cases: list[dict], config: ExperimentConfig, target: dict[in
     if s.order == "random" or not s.cases or s.cases >= len(ids):
         rng.shuffle(ids)
         return ids[: s.cases] if s.cases else ids
-    by_level: dict[int, list[str]] = {}
+    by_level: dict[int, list[dict]] = {}
     for c in usable:
-        by_level.setdefault(int(c["reference"]["esi"]), []).append(c["case_id"])
+        by_level.setdefault(int(c["reference"]["esi"]), []).append(c)
     target = target or {k: len(v) for k, v in by_level.items()}
-    alloc = allocate(s.cases, target, {k: len(v) for k, v in by_level.items()})
+    strata: dict = {}
+    weights: dict = {}
+    if s.stratify_head_injury:
+        if any(_hi(c) is None for c in usable):
+            raise ValueError("Head-injury stratification needs the head-injury label: build the case "
+                             "files with hosp/diagnoses_icd.csv.gz in place.")
+        for level, group in by_level.items():
+            for flag in (True, False):
+                members = [c for c in group if bool(_hi(c)) == flag]
+                if members:
+                    strata[(level, flag)] = members
+                    weights[(level, flag)] = target.get(level, 0) * len(members) / len(group)
+    else:
+        strata = by_level
+        weights = {k: target.get(k, 0) for k in by_level}
+    alloc = allocate(s.cases, weights, {k: len(v) for k, v in strata.items()})
     chosen = []
-    for level in sorted(alloc):
-        pool = by_level[level][:]
+    for key in sorted(alloc):
+        pool = [c["case_id"] for c in strata[key]]
         rng.shuffle(pool)
-        chosen += pool[: alloc[level]]
+        chosen += pool[: alloc[key]]
     rng.shuffle(chosen)
     return chosen
+
+
+def cohort_esi(cohort_dir: Path, cases: list[dict]) -> dict[int, int]:
+    """The filtered cohort's ESI counts; the cases' own if the cohort file is missing."""
+    try:
+        return esi_distribution(cohort_dir)
+    except (FileNotFoundError, ValueError):
+        out: dict[int, int] = {}
+        for c in cases:
+            if c["reference"]["esi"] is not None:
+                out[int(c["reference"]["esi"])] = out.get(int(c["reference"]["esi"]), 0) + 1
+        return out
+
+
+def plan_sample(cohort_dir: Path, config: ExperimentConfig, cases: list[dict] | None = None) -> tuple[list[str], dict]:
+    """Draw the run's cases and describe them (shown before starting and saved in plan.json)."""
+    cases = cases if cases is not None else load_cases(cohort_dir)
+    target = cohort_esi(cohort_dir, cases)
+    ids = sample_case_ids(cases, config, target if config.sampling.order == "stratified" else None)
+    return ids, describe_sample(cases, ids, target, config)
+
+
+def describe_sample(cases: list[dict], ids: list[str], target: dict[int, int], config: ExperimentConfig) -> dict:
+    import hashlib
+    import statistics
+    by_id = {c["case_id"]: c for c in cases}
+    usable = [c for c in cases if c["reference"]["esi"] is not None]
+    chosen = [by_id[i] for i in ids]
+    n, s = len(chosen), config.sampling
+    pct = lambda k, t: round(100 * k / t, 1) if t else None  # noqa: E731
+    levels = sorted(set(target) | {int(c["reference"]["esi"]) for c in chosen})
+    esi_rows = []
+    for level in levels:
+        got = sum(int(c["reference"]["esi"]) == level for c in chosen)
+        esi_rows.append({"level": level, "cohort": target.get(level, 0), "cohort_pct": pct(target.get(level, 0), sum(target.values())),
+                         "sample": got, "sample_pct": pct(got, n)})
+    labelled = all(_hi(c) is not None for c in usable)
+    hi = None
+    if labelled:
+        pool_k = sum(bool(_hi(c)) for c in usable)
+        k = sum(bool(_hi(c)) for c in chosen)
+        hi = {"pool": pool_k, "pool_pct": pct(pool_k, len(usable)), "sample": k, "sample_pct": pct(k, n)}
+    vitals_ok = lambda c: all(v is not None for v in (c["nurse_view"].get("vitals") or {}).values())  # noqa: E731
+    ages = [c["nurse_view"]["age"] for c in chosen if c["nurse_view"].get("age") is not None]
+    summary = {
+        "flow": {"cohort_stays": sum(target.values()), "cases": len(cases), "usable": len(usable),
+                 "requested": s.cases, "sample": n},
+        "order": s.order, "seed": s.seed, "stratify_head_injury": s.stratify_head_injury,
+        "esi": esi_rows, "head_injury": hi,
+        "sex": {k: sum(c["nurse_view"].get("sex") == k for c in chosen) for k in ("F", "M")},
+        "age_median": statistics.median(ages) if ages else None,
+        "with_hpi": sum(bool((c["patient_view"].get("hpi") or "").strip()) for c in chosen),
+        "with_medications": sum(bool(c["patient_view"].get("medications")) for c in chosen),
+        "with_all_vitals": sum(vitals_ok(c) for c in chosen),
+        "hpi_redacted": sum(bool(c.get("audit", {}).get("hpi_redacted")) for c in chosen),
+        # identifies the SET of cases: runs with the same id ran on exactly the same patients
+        "sample_id": hashlib.sha1(",".join(sorted(ids)).encode()).hexdigest()[:10],
+    }
+    checks = []
+
+    def check(level, text):
+        checks.append({"level": level, "text": text})
+    check("error" if len(set(ids)) != n else "ok",
+          "No case appears twice." if len(set(ids)) == n else "Some cases appear twice.")
+    if s.cases and s.cases > len(usable):
+        check("warning", f"{s.cases:,} cases requested, but only {len(usable):,} have an ESI; all of them will run.")
+    if n == 0:
+        check("error", "The sample is empty.")
+    if n:
+        tolerance = max(1.0, 100 / n)                     # rounding limits small samples
+        gap = max(abs((r["sample_pct"] or 0) - (r["cohort_pct"] or 0)) for r in esi_rows)
+        if s.order == "stratified":
+            check("ok" if gap <= tolerance else "warning",
+                  f"ESI mix matches the cohort (largest difference {gap:.1f} points)." if gap <= tolerance else
+                  f"ESI mix differs from the cohort by up to {gap:.1f} points (too few cases in a level?).")
+        else:
+            check("info", f"Not stratified: the ESI mix differs from the cohort by up to {gap:.1f} points.")
+        if hi is not None and s.stratify_head_injury:
+            d = abs(hi["sample_pct"] - hi["pool_pct"])
+            check("ok" if d <= tolerance else "warning",
+                  f"Head-injury share matches the case pool ({hi['sample_pct']}% vs {hi['pool_pct']}%).")
+        elif hi is None:
+            check("info", "No head-injury label in these case files (hosp/diagnoses_icd.csv.gz was missing).")
+        missing_hpi = n - summary["with_hpi"]
+        if missing_hpi:
+            check("warning", f"{missing_hpi} sampled cases have no history (HPI) for the patient agent.")
+        check("info", f"{summary['with_medications']} of {n} have home medications; "
+                      f"{summary['with_all_vitals']} of {n} have all triage vital signs.")
+    summary["checks"] = checks
+    summary["ok"] = not any(c["level"] == "error" for c in checks)
+    return summary
 
 
 def create_run(config: ExperimentConfig, runs_dir: Path | None = None, cohorts_dir: Path | None = None) -> Path:
     """Prepare a run folder: settings, cohort and the planned cases."""
     cohort_dir = resolve_cohort(config.cohort, cohorts_dir)
-    cases = load_cases(cohort_dir)
-    plan_extra = {}
-    if config.sampling.order == "stratified":
-        try:
-            target = esi_distribution(cohort_dir)
-        except (FileNotFoundError, ValueError):     # no cohort.csv: use the cases' own mix
-            target = {}
-            for c in cases:
-                if c["reference"]["esi"] is not None:
-                    target[int(c["reference"]["esi"])] = target.get(int(c["reference"]["esi"]), 0) + 1
-        case_ids = sample_case_ids(cases, config, target)
-        esi_of = {c["case_id"]: int(c["reference"]["esi"]) for c in cases if c["reference"]["esi"] is not None}
-        got: dict[int, int] = {}
-        for cid in case_ids:
-            got[esi_of[cid]] = got.get(esi_of[cid], 0) + 1
-        plan_extra = {"stratified_by": "esi", "cohort_esi": {str(k): v for k, v in target.items()},
-                      "sample_esi": {str(k): got[k] for k in sorted(got)}}
-    else:
-        case_ids = sample_case_ids(cases, config)
+    case_ids, summary = plan_sample(cohort_dir, config)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     root = runs_dir or paths.runs_dir()
     run_dir = root / f"{config.name}_{stamp}"
@@ -137,7 +230,7 @@ def create_run(config: ExperimentConfig, runs_dir: Path | None = None, cohorts_d
         run_dir, n = root / f"{config.name}_{stamp}-{n}", n + 1
     run_dir.mkdir(parents=True)
     config.to_yaml(run_dir / "experiment.yaml")
-    (run_dir / "plan.json").write_text(json.dumps({"cohort_dir": str(cohort_dir), **plan_extra, "case_ids": case_ids},
+    (run_dir / "plan.json").write_text(json.dumps({"cohort_dir": str(cohort_dir), "sample": summary, "case_ids": case_ids},
                                                   indent=2))
     write_status(run_dir, state="created", total=len(case_ids), done=0, version=__version__,
                  created=datetime.now().isoformat(timespec="seconds"))

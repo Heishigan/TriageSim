@@ -93,6 +93,9 @@ class Sampling(Strict):
         "random", description="random: seeded random sample; first: cases in file order; stratified: "
         "seeded random sample with the same ESI distribution as the cohort")
     seed: int = 42
+    stratify_head_injury: bool = Field(
+        False, description="With 'stratified': also keep the share of head-injury cases (ICD label) "
+        "within each ESI level, as in the case pool")
 
 
 class ExperimentConfig(Strict):

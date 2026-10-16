@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { post, useApi } from "../api";
-import { Alert, Badge, Button, Card, Field, Page, Spinner, inputClass } from "../components/ui";
+import { Alert, Badge, Button, Card, ConfirmDialog, Field, Page, Spinner, inputClass } from "../components/ui";
 
 /* The experiment is edited as plain JSON mirroring the YAML; the server validates it. */
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -26,6 +26,9 @@ export default function NewExperiment() {
   const [errors, setErrors] = useState<string[]>([]);
   const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [sample, setSample] = useState<Sample | null>(null);
+  const [sampleError, setSampleError] = useState<string | null>(null);
 
   const choose = (p: Preset) => {
     const c = structuredClone(p.config);
@@ -42,6 +45,18 @@ export default function NewExperiment() {
     return () => clearTimeout(id);
   }, [config]);
 
+  // The sample check: which cases the run will get, recomputed when cohort or sampling change.
+  const sampleKey = config && errors.length === 0 ? JSON.stringify([config.cohort, config.sampling]) : null;
+  useEffect(() => {
+    if (!sampleKey) { setSample(null); return; }
+    setSample(null); setSampleError(null);
+    const id = setTimeout(async () => {
+      try { setSample(await post<Sample>("/experiments/preview", config)); }
+      catch (e) { setSampleError((e as Error).message); }
+    }, 400);
+    return () => clearTimeout(id);
+  }, [sampleKey]); // eslint-disable-line
+
   const set = (path: string, value: unknown) => setConfig((c) => {
     const next = structuredClone(c!);
     const keys = path.split(".");
@@ -56,7 +71,7 @@ export default function NewExperiment() {
     try {
       const r = await post<{ name: string }>("/runs", config);
       navigate(`/runs/${r.name}`);
-    } catch (e) { setStartError((e as Error).message); setStarting(false); }
+    } catch (e) { setStarting(false); throw e; }
   };
 
   const downloadYaml = async () => {
@@ -87,7 +102,9 @@ export default function NewExperiment() {
       actions={<>
         <Button onClick={() => setConfig(null)}>Change preset</Button>
         <Button onClick={downloadYaml} disabled={errors.length > 0}>Download YAML</Button>
-        <Button variant="primary" disabled={errors.length > 0 || starting || !config.cohort} onClick={start}>
+        <Button variant="primary" disabled={errors.length > 0 || starting || !config.cohort || !sample?.ok}
+          title={!sample ? "Waiting for the sample check" : !sample.ok ? "Fix the sample check first" : undefined}
+          onClick={() => setConfirming(true)}>
           {starting ? <span className="flex items-center gap-2"><Spinner /> Starting…</span> : "Start run"}</Button>
       </>}>
       {errors.length > 0 && <Alert kind="error"><b>Fix before running:</b><ul className="mt-1 list-disc pl-5">{errors.map((e) => <li key={e}>{e}</li>)}</ul></Alert>}
@@ -113,7 +130,29 @@ export default function NewExperiment() {
               <input type="number" title="Seed" className={`${inputClass} w-24`} value={config.sampling.seed} onChange={(e) => set("sampling.seed", Number(e.target.value))} />
             </div></Field>
         </div>
+        {config.sampling.order === "stratified" && (
+          <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={!!config.sampling.stratify_head_injury}
+              onChange={(e) => set("sampling.stratify_head_injury", e.target.checked)} />
+            Also keep the share of head-injury cases (ICD label) within each ESI level
+          </label>)}
       </Card>
+
+      <SampleCheck sample={sample} error={sampleError} waiting={!!sampleKey && !sample && !sampleError} />
+
+      {confirming && sample && (
+        <ConfirmDialog title={`Start ${config.name}?`} confirmLabel="Start run" busyLabel="Starting…" variant="primary"
+          onClose={() => setConfirming(false)} onConfirm={start}>
+          <p>{sample.flow.sample.toLocaleString()} cases from <code>{config.cohort}</code>, {config.sampling.order}
+            {config.sampling.stratify_head_injury ? " by ESI and head injury" : config.sampling.order === "stratified" ? " by ESI" : ""}, seed {config.sampling.seed}.</p>
+          <p>ESI {sample.esi.map((r) => `${r.level}: ${r.sample}`).join(" · ")}
+            {sample.head_injury ? ` · head injury ${sample.head_injury.sample} (${sample.head_injury.sample_pct}%)` : ""}</p>
+          <p>Nurse <code>{config.nurse.model.name}</code>
+            {config.nurse.mode === "interview" && config.patient ? <> · patient <code>{config.patient.model.name}</code></> : null}
+            {config.evaluator?.enabled ? <> · evaluator <code>{config.evaluator.model.name}</code></> : null}</p>
+          <p>Sample ID <code>{sample.sample_id}</code>: runs with the same ID use exactly the same patients.</p>
+          {sample.checks.some((c) => c.level === "warning") && <Alert kind="warning">The sample check has warnings; see above.</Alert>}
+        </ConfirmDialog>)}
 
       {!models.length && !demoMode && <Alert kind="warning">No models are downloaded yet. Download at least one under <a className="font-medium underline" href="/models">Models</a>, then come back.</Alert>}
       <AgentCard title="Nurse agent" path="nurse" agent={config.nurse} set={set} fields={fields} models={models} demoMode={demoMode} exclude={["persona", "esi", "disposition", "head_injury", "transcript", "decision"]}>
@@ -208,6 +247,65 @@ function AgentCard({ title, path, agent, set, fields, models, demoMode, exclude,
           <textarea rows={10} className={`${inputClass} font-mono text-xs leading-5`} value={agent.system_prompt}
             onChange={(e) => set(`${path}.system_prompt`, e.target.value)} /></Field>
       </div>
+    </Card>
+  );
+}
+
+type Check = { level: "ok" | "info" | "warning" | "error"; text: string };
+type Sample = {
+  flow: { cohort_stays: number; cases: number; usable: number; requested: number | null; sample: number };
+  esi: { level: number; cohort: number; cohort_pct: number | null; sample: number; sample_pct: number | null }[];
+  head_injury: { pool: number; pool_pct: number | null; sample: number; sample_pct: number | null } | null;
+  sex: { F: number; M: number }; age_median: number | null;
+  with_hpi: number; with_medications: number; with_all_vitals: number; hpi_redacted: number;
+  sample_id: string; checks: Check[]; ok: boolean;
+};
+
+const CHECK_STYLE: Record<Check["level"], [string, string]> = {
+  ok: ["✓", "text-emerald-700"], info: ["i", "text-slate-500"], warning: ["!", "text-amber-700"], error: ["✕", "text-rose-700"],
+};
+
+function SampleCheck({ sample, error, waiting }: { sample: Sample | null; error: string | null; waiting: boolean }) {
+  if (error) return <Alert kind="error">Sample check: {error}</Alert>;
+  if (!sample) return waiting ? <Card title="Sample check"><p className="flex items-center gap-2 text-sm text-slate-500"><Spinner /> Drawing the sample…</p></Card> : null;
+  const n = sample.flow.sample;
+  const pct = (k: number) => (n ? `${((100 * k) / n).toFixed(1)}%` : "–");
+  return (
+    <Card title="Sample check" actions={<span className="text-xs text-slate-500">Sample ID <code>{sample.sample_id}</code></span>}>
+      <p className="text-sm text-slate-700">
+        Cohort {sample.flow.cohort_stays.toLocaleString()} stays → case files {sample.flow.cases.toLocaleString()} → with ESI {sample.flow.usable.toLocaleString()} → <b>this run {n.toLocaleString()} cases</b>
+      </p>
+      <div className="mt-4 grid gap-6 md:grid-cols-2">
+        <table className="text-sm">
+          <thead><tr className="text-left text-xs uppercase tracking-wide text-slate-500"><th className="py-1">ESI</th><th>Cohort</th><th>This run</th></tr></thead>
+          <tbody>
+            {sample.esi.map((r) => (
+              <tr key={r.level} className="border-t border-slate-100">
+                <td className="py-1">{r.level}</td>
+                <td>{r.cohort.toLocaleString()} <span className="text-slate-400">({r.cohort_pct ?? "–"}%)</span></td>
+                <td>{r.sample.toLocaleString()} <span className="text-slate-400">({r.sample_pct ?? "–"}%)</span></td>
+              </tr>))}
+            {sample.head_injury && (
+              <tr className="border-t border-slate-200">
+                <td className="py-1">Head injury</td>
+                <td>{sample.head_injury.pool.toLocaleString()} <span className="text-slate-400">({sample.head_injury.pool_pct}% of cases)</span></td>
+                <td>{sample.head_injury.sample.toLocaleString()} <span className="text-slate-400">({sample.head_injury.sample_pct}%)</span></td>
+              </tr>)}
+          </tbody>
+        </table>
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+          <dt className="text-slate-500">Female / male</dt><dd>{sample.sex.F} / {sample.sex.M}</dd>
+          <dt className="text-slate-500">Median age</dt><dd>{sample.age_median ?? "–"}</dd>
+          <dt className="text-slate-500">With history (HPI)</dt><dd>{sample.with_hpi} ({pct(sample.with_hpi)})</dd>
+          <dt className="text-slate-500">History redacted</dt><dd>{sample.hpi_redacted} ({pct(sample.hpi_redacted)})</dd>
+          <dt className="text-slate-500">With home medications</dt><dd>{sample.with_medications} ({pct(sample.with_medications)})</dd>
+          <dt className="text-slate-500">With all vital signs</dt><dd>{sample.with_all_vitals} ({pct(sample.with_all_vitals)})</dd>
+        </dl>
+      </div>
+      <ul className="mt-4 space-y-1 text-sm">
+        {sample.checks.map((c, i) => (
+          <li key={i} className={`flex gap-2 ${CHECK_STYLE[c.level][1]}`}><span className="w-4 text-center font-semibold">{CHECK_STYLE[c.level][0]}</span>{c.text}</li>))}
+      </ul>
     </Card>
   );
 }

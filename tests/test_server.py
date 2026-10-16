@@ -320,3 +320,17 @@ def test_delete_run_and_cohort(api):
     assert api.delete(f"/api/cohorts/{name}").status_code == 404
     assert api.delete("/api/runs/..%2F..").status_code in (404, 405)   # never reaches a folder
     assert api.delete("/api/runs/no-such-run").status_code == 404
+
+
+def test_sample_preview_before_starting(api):
+    name = cohort_with_cases(api)
+    preset = next(p for p in api.get("/api/experiment-presets").json() if p["name"] == "chart_review")
+    config = demo(preset["config"]) | {"cohort": name}
+    config["sampling"] = {"cases": 1, "order": "stratified", "seed": 42, "stratify_head_injury": True}
+    preview = api.post("/api/experiments/preview", json=config).json()
+    assert preview["ok"] and preview["flow"]["sample"] == 1 and preview["head_injury"] is not None
+    run = api.post("/api/runs", json=config).json()["name"]
+    wait_job(api, run)
+    plan = api.get(f"/api/runs/{run}").json()["plan"]
+    assert plan["sample"]["sample_id"] == preview["sample_id"]       # the run got exactly the previewed cases
+    assert api.post("/api/experiments/preview", json=config | {"cohort": "nope"}).status_code == 400

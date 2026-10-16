@@ -128,8 +128,9 @@ export function Spinner() {
 
 /** A confirmation dialog for destructive actions. `onConfirm` may throw; its message is shown
  * in the dialog and the dialog stays open. Escape or Cancel closes it; Cancel has the focus. */
-export function ConfirmDialog({ title, children, confirmLabel = "Delete", onConfirm, onClose }:
-  { title: string; children: ReactNode; confirmLabel?: string; onConfirm: () => Promise<void>; onClose: () => void }) {
+export function ConfirmDialog({ title, children, confirmLabel = "Delete", busyLabel = "Deleting…", variant = "danger", onConfirm, onClose }:
+  { title: string; children: ReactNode; confirmLabel?: string; busyLabel?: string; variant?: "danger" | "primary";
+    onConfirm: () => Promise<void>; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancel = useRef<HTMLButtonElement>(null);
@@ -149,13 +150,13 @@ export function ConfirmDialog({ title, children, confirmLabel = "Delete", onConf
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
       onMouseDown={(e) => { if (e.target === e.currentTarget) close.current(); }}>
       <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"
-        className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
         <h2 id="confirm-title" className="text-base font-semibold text-slate-900">{title}</h2>
         <div className="mt-3 space-y-2 text-sm text-slate-600">{children}</div>
         {error && <div className="mt-4"><Alert kind="error">{error}</Alert></div>}
         <div className="mt-6 flex justify-end gap-2">
           <Button ref={cancel} disabled={busy} onClick={onClose}>Cancel</Button>
-          <Button variant="danger" disabled={busy} onClick={confirm}>{busy ? "Deleting…" : confirmLabel}</Button>
+          <Button variant={variant} disabled={busy} onClick={confirm}>{busy ? busyLabel : confirmLabel}</Button>
         </div>
       </div>
     </div>

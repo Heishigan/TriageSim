@@ -53,7 +53,12 @@ with sync_playwright() as p:
         if select.locator("option[value=__demo]").count():
             select.select_option("__demo")
     page.fill("input[type=number] >> nth=0", "4"); time.sleep(1); shot("09_experiment")
-    button("Start run"); page.wait_for_selector("text=Conversation", timeout=30000); time.sleep(1.5); shot("10_live")
+    page.get_by_text("Also keep the share of head-injury cases").click()
+    page.wait_for_selector("text=Head-injury share matches", timeout=30000); shot("09b_sample_check")
+    button("Start run"); page.wait_for_selector("text=runs with the same ID use exactly the same patients")
+    shot("09c_confirm")
+    page.get_by_role("alertdialog").get_by_role("button", name="Start run").click()
+    page.wait_for_selector("text=Conversation", timeout=30000); time.sleep(1.5); shot("10_live")
     page.wait_for_selector("text=completed", timeout=120000)
     button("Results"); page.wait_for_selector("text=Agreement with nurse"); shot("11_results")
     if page.locator("text=This page ran into a problem").count():

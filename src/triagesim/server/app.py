@@ -572,6 +572,22 @@ def validate_experiment(body: dict) -> dict:
     return {"valid": True, "errors": []}
 
 
+@app.post("/api/experiments/preview")
+def preview_sample(body: dict) -> dict:
+    """The cases a run would get, described and checked, before anything starts. Takes the whole
+    experiment (only cohort and sampling are used)."""
+    from ..experiment.runner import plan_sample, resolve_cohort
+    try:
+        config = ExperimentConfig.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(422, _validation_errors(exc)) from exc
+    try:
+        cohort_dir = resolve_cohort(config.cohort)
+        return plan_sample(cohort_dir, config)[1]
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.post("/api/experiments/yaml")
 def experiment_yaml(body: dict):
     """The experiment as a YAML file, e.g. to run it on a cluster with 'triagesim run'."""
@@ -623,7 +639,7 @@ def start_run(body: dict) -> dict:
                                      "or choose an installed model.")
     try:
         run_dir = create_run(config)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(400, str(exc))
     _start_run(run_dir)
     return {"name": run_dir.name}

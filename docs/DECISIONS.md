@@ -258,3 +258,12 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   interleaved in seeded random order, so a run stopped part-way is still roughly representative.
   The cohort's and the sample's ESI counts are saved in plan.json. Every run with the same cohort,
   size and seed gets the same cases (paired comparisons).
+- D76. Option 'stratify_head_injury' (with stratified sampling): within each ESI level the sample
+  keeps the case pool's share of head-injury cases (ICD label); refused with a clear message if
+  the case files have no label. Proportional, not enriched.
+- D77. Sample check before every run (New experiment page, recomputed on every change of cohort or
+  sampling): the flow cohort -> case files -> with ESI -> this run, ESI and head-injury counts of
+  cohort vs sample, sex, median age, history/medication/vital-sign coverage, and checks (duplicates,
+  mix within rounding of the cohort, missing histories). Start is disabled until the check passes
+  and asks for confirmation with the key numbers. The same summary is saved in plan.json with a
+  sample ID (hash of the case set): runs with the same ID used exactly the same patients.

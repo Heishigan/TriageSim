@@ -79,13 +79,16 @@ export function Alert({ kind = "info", children }: { kind?: "info" | "error" | "
   return <div className={`rounded-lg border px-4 py-3 text-sm ${style}`}>{children}</div>;
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+/** A labelled form field. `group` renders a plain block instead of a <label>, for fields that hold
+ * their own clickable labels (checkbox chips): nested labels swallow clicks in some browsers. */
+export function Field({ label, hint, group, children }: { label: string; hint?: ReactNode; group?: boolean; children: ReactNode }) {
+  const Tag = group ? "div" : "label";
   return (
-    <label className="block">
+    <Tag className="block">
       <span className="text-sm font-medium text-slate-700">{label}</span>
       <div className="mt-1">{children}</div>
       {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
-    </label>
+    </Tag>
   );
 }
 

@@ -124,7 +124,7 @@ function Builder({ presets, onCancel }: { presets: Preset[]; onCancel: () => voi
             <input type="number" min={0} max={120} className={inputClass} value={s.max_age ?? ""}
               onChange={(e) => setS({ ...s, max_age: e.target.value === "" ? null : Number(e.target.value) })} />
           </Field>
-          <Field label="Sex">
+          <Field group label="Sex">
             <div className="flex gap-4 pt-1 text-sm">{["F", "M"].map((x) => (
               <label key={x} className="flex items-center gap-2"><input type="checkbox" checked={s.sexes.includes(x)}
                 onChange={() => setS({ ...s, sexes: toggle(s.sexes, x) })} />{x === "F" ? "Female" : "Male"}</label>))}</div>
@@ -140,7 +140,7 @@ function Builder({ presets, onCancel }: { presets: Preset[]; onCancel: () => voi
           <Field label="ICD-9 codes in the ED diagnoses" hint="ICD-9 codes start with a digit, E or V, e.g. E880-E888.">
             <input className={inputClass} value={icd9} onChange={(e) => setIcd9(e.target.value)} />
           </Field>
-          <Field label="ESI levels">
+          <Field group label="ESI levels">
             <div className="flex gap-3 pt-1 text-sm">{[1, 2, 3, 4, 5].map((x) => (
               <label key={x} className="flex items-center gap-1.5"><input type="checkbox" checked={s.esi_levels.includes(x)}
                 onChange={() => setS({ ...s, esi_levels: toggle(s.esi_levels, x).sort() })} />{x}</label>))}</div>

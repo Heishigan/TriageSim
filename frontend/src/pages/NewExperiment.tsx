@@ -235,7 +235,7 @@ function AgentCard({ title, path, agent, set, fields, models, demoMode, exclude,
           </>}
           {m.source === "demo" && <div className="md:col-span-4"><Alert kind="warning">Demo model: canned answers to try the app. Results mean nothing.</Alert></div>}
         </div>
-        <Field label="What this agent may read" hint="The prompt can only use fields that are ticked. Reference answers are never available to the nurse or patient.">
+        <Field group label="What this agent may read" hint="Ticking a field allows it; the agent only receives it where the prompt uses {field}. Reference answers are never available to the nurse or patient.">
           <div className="flex flex-wrap gap-2 pt-1">{options.map(([k, f]) => (
             <label key={k} title={f.description} className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${
               sees.includes(k) ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-600"}`}>

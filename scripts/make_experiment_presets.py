@@ -3,12 +3,23 @@ from pathlib import Path
 
 import yaml
 
-ESI_GUIDE = """ESI levels:
-1 - Needs an immediate life-saving intervention.
-2 - High-risk situation, new confusion or lethargy, or severe pain or distress.
-3 - Stable, but needs two or more resources (labs, imaging, IV fluids or medication, a specialist).
-4 - Needs one resource.
-5 - Needs no resources."""
+# The ESI decision points (Emergency Severity Index Handbook, 5th ed., ENA 2023), used in every
+# nurse prompt so the conditions differ only in how the information is obtained. A stepwise
+# decision-tree prompt clearly beat open prompts in Benning et al. (medRxiv 2026).
+ESI_GUIDE = """Decide the Emergency Severity Index (ESI) level step by step, as in the ESI algorithm:
+A. Does the patient need an immediate life-saving intervention (airway or breathing support,
+   emergency medication, or haemodynamic intervention such as fluid resuscitation or blood)?
+   If yes: ESI 1.
+B. Is this a high-risk situation, or is the patient newly confused, lethargic or disoriented,
+   or in severe pain or distress? If yes: ESI 2.
+C. Otherwise, how many different types of resources will the patient likely need? Resources
+   are: laboratory tests, ECG or X-rays, CT/MRI/ultrasound, IV fluids, IV/IM/nebulised
+   medication, specialty consultation, a simple procedure (counts as one) or a complex procedure
+   (counts as two). History and examination, point-of-care tests, oral medication, tetanus
+   shots, simple wound care, splints and slings do not count.
+   None: ESI 5. One: ESI 4. Two or more: go to D.
+D. Are the vital signs in the danger zone (heart rate above 100, respiratory rate above 20,
+   oxygen saturation below 92%)? If yes, consider ESI 2; otherwise ESI 3."""
 
 NURSE_INTERVIEW = f"""You are an experienced emergency department triage nurse. A patient has just arrived.
 Interview them and decide their Emergency Severity Index (ESI) level.
@@ -167,7 +178,7 @@ def literal(obj):
 for name, (description, parts) in PRESETS.items():
     config = {"name": name, "description": description, "cohort": "elderly_falls",
               "ollama_url": "http://127.0.0.1:11434",
-              "sampling": {"cases": 20, "order": "stratified", "seed": 42}, **parts}
+              "sampling": {"cases": 20, "order": "stratified", "seed": 42, "stratify_head_injury": True}, **parts}
     (out / f"{name}.yaml").write_text(yaml.safe_dump(literal(config), sort_keys=False, allow_unicode=True,
                                                      width=100), encoding="utf-8")
     print("wrote", name)

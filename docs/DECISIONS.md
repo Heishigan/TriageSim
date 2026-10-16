@@ -267,3 +267,9 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   mix within rounding of the cohort, missing histories). Start is disabled until the check passes
   and asks for confirmation with the key numbers. The same summary is saved in plan.json with a
   sample ID (hash of the case set): runs with the same ID used exactly the same patients.
+- D78. Every nurse prompt (chart review, multiple choice, interview) now walks through the ESI
+  decision points A-D of the ESI Handbook, 5th ed. (ENA, 2023): life-saving intervention,
+  high-risk/confused/severe pain, number of resource types (with the handbook's list of what
+  counts), danger-zone vital signs. Same text in every condition. Motivation: a stepwise ESI
+  decision-tree prompt clearly outperformed open prompts in Benning et al. (medRxiv 2026).
+  Presets also tick head-injury stratification by default.

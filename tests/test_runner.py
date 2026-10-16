@@ -146,7 +146,7 @@ def test_allocation_keeps_the_cohort_mix():
 def test_stratified_sample_is_reproducible_and_interleaved():
     from triagesim.experiment.runner import sample_case_ids
     cases = _cases({1: 100, 2: 600, 3: 470, 4: 10})
-    config = demo_config(cases=200, order="stratified", seed=42)
+    config = demo_config(cases=200, order="stratified", seed=42, stratify_head_injury=False)
     target = {1: 633, 2: 3811, 3: 2970, 4: 61}
     ids = sample_case_ids(cases, config, target)
     assert ids == sample_case_ids(cases, config, target) and len(set(ids)) == 200
@@ -155,7 +155,7 @@ def test_stratified_sample_is_reproducible_and_interleaved():
     assert counts == {1: 17, 2: 102, 3: 79, 4: 2}
     first_half = [esi[i] for i in ids[:100]]
     assert 30 <= first_half.count(2) <= 70                  # levels are mixed, not in blocks
-    other = sample_case_ids(cases, demo_config(cases=200, order="stratified", seed=7), target)
+    other = sample_case_ids(cases, demo_config(cases=200, order="stratified", seed=7, stratify_head_injury=False), target)
     assert set(other) != set(ids)
 
 

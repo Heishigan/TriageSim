@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import threading
 from pathlib import Path
 from typing import Any
@@ -331,6 +332,36 @@ def list_cohorts() -> list[dict]:
     return out
 
 
+def _runs_using(cohort: str) -> list[dict]:
+    out = []
+    for d in list_runs():
+        if _run_cohort(d) == cohort:
+            out.append({"name": d.name, "active": _run_is_active(d.name, read_status(d))})
+    return out
+
+
+@app.get("/api/cohorts/{name}/runs")
+def cohort_runs(name: str) -> list[dict]:
+    """Runs made from this cohort (shown before deleting it)."""
+    _cohort_dir(name)
+    return _runs_using(name)
+
+
+@app.delete("/api/cohorts/{name}")
+def delete_cohort(name: str) -> dict:
+    """Delete a cohort folder with its case files. Runs made from it keep their results but can no
+    longer be resumed; a cohort in use by a running run or a case build cannot be deleted."""
+    d = _cohort_dir(name)
+    if any(j.label == name for j in jobs.running("cases")):
+        raise HTTPException(409, "Case files are being built for this cohort; wait until that finishes.")
+    active = [r["name"] for r in _runs_using(name) if r["active"]]
+    if active:
+        raise HTTPException(409, "These runs are still using this cohort: " + ", ".join(active) + ". Stop them first.")
+    _remove_folder(d, f"cohort {name}")
+    log.info("Deleted cohort %s", name)
+    return {"deleted": name}
+
+
 @app.get("/api/cohorts/{name}")
 def get_cohort(name: str) -> dict:
     d = _cohort_dir(name)
@@ -541,6 +572,22 @@ def validate_experiment(body: dict) -> dict:
     return {"valid": True, "errors": []}
 
 
+@app.post("/api/experiments/preview")
+def preview_sample(body: dict) -> dict:
+    """The cases a run would get, described and checked, before anything starts. Takes the whole
+    experiment (only cohort and sampling are used)."""
+    from ..experiment.runner import plan_sample, resolve_cohort
+    try:
+        config = ExperimentConfig.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(422, _validation_errors(exc)) from exc
+    try:
+        cohort_dir = resolve_cohort(config.cohort)
+        return plan_sample(cohort_dir, config)[1]
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.post("/api/experiments/yaml")
 def experiment_yaml(body: dict):
     """The experiment as a YAML file, e.g. to run it on a cluster with 'triagesim run'."""
@@ -592,7 +639,7 @@ def start_run(body: dict) -> dict:
                                      "or choose an installed model.")
     try:
         run_dir = create_run(config)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(400, str(exc))
     _start_run(run_dir)
     return {"name": run_dir.name}
@@ -608,8 +655,68 @@ def runs() -> list[dict]:
         if state in ("running", "stopping") and not jobs.get(d.name) and not is_alive(st):
             state = "interrupted"
         out.append({"name": d.name, "experiment": cfg.get("name"), "mode": cfg.get("nurse", {}).get("mode"),
+                    "type": _run_type(cfg), "models": _run_models(cfg), "cohort": _run_cohort(d),
                     **{k: st.get(k) for k in ("done", "total", "created", "updated")}, "state": state})
     return out
+
+
+def _run_type(cfg: dict) -> str:
+    """'Interview · random personas', 'Chart review', ... for the runs list."""
+    nurse, patient = cfg.get("nurse") or {}, cfg.get("patient") or {}
+    mode = nurse.get("mode", "interview")
+    if mode != "interview":
+        return {"chart_review": "Chart review", "multiple_choice": "Multiple choice"}.get(mode, mode)
+    label = "Interview"
+    if patient.get("mode") == "retrieval":
+        label += " · retrieval patient"
+    elif patient.get("persona") == "random":
+        label += " · random personas"
+    elif patient.get("persona") not in (None, "neutral"):
+        label += f" · {patient['persona']} persona"
+    return label
+
+
+def _run_models(cfg: dict) -> dict:
+    """The model behind each agent that takes part (None when the agent is not used)."""
+    nurse = cfg.get("nurse") or {}
+    interview = nurse.get("mode", "interview") == "interview"
+    evaluator = cfg.get("evaluator") or {}
+    name = lambda agent: ((agent or {}).get("model") or {}).get("name")  # noqa: E731
+    return {"nurse": name(nurse),
+            "patient": name(cfg.get("patient")) if interview else None,
+            "evaluator": name(evaluator) if evaluator.get("enabled") else None}
+
+
+def _run_cohort(run_dir: Path) -> str | None:
+    plan = _read_json(run_dir / "plan.json") or {}
+    return Path(plan["cohort_dir"]).name if plan.get("cohort_dir") else None
+
+
+def _run_is_active(name: str, status: dict) -> bool:
+    job = jobs.get(name)
+    return bool(job and job.state == "running") or (status.get("state") in ("running", "stopping")
+                                                    and is_alive(status))
+
+
+def _remove_folder(path: Path, what: str) -> None:
+    try:
+        shutil.rmtree(path)
+    except OSError as e:
+        raise HTTPException(500, f"Could not delete {what} completely: {e}. Close any program using its "
+                                 f"files and try again.") from e
+
+
+@app.delete("/api/runs/{name}")
+def delete_run(name: str) -> dict:
+    """Delete a run folder (results and transcripts). A running run must be stopped first."""
+    d = _run_dir(name)
+    status = read_status(d)
+    if _run_is_active(name, status):
+        hint = f" It is a Slurm job: scancel {status['slurm_job']}." if status.get("slurm_job") and not jobs.get(name) else ""
+        raise HTTPException(409, f"This run is still running; stop it first.{hint}")
+    _remove_folder(d, f"run {name}")
+    log.info("Deleted run %s", name)
+    return {"deleted": name}
 
 
 @app.get("/api/runs/{name}")

@@ -1,11 +1,12 @@
 name: interview
-description: Nurse interviews an open, cooperative patient.
+description: Nurse interviews a simulated patient. Choose the patient type and persona below.
 cohort: elderly_falls
 ollama_url: http://127.0.0.1:11434
 sampling:
   cases: 20
-  order: random
+  order: stratified
   seed: 42
+  stratify_head_injury: true
 nurse:
   mode: interview
   model:
@@ -34,12 +35,20 @@ nurse:
     - Use only what the patient tells you and the information above. Do not invent facts.
     - Decide as soon as you have enough information.
 
-    ESI levels:
-    1 - Needs an immediate life-saving intervention.
-    2 - High-risk situation, new confusion or lethargy, or severe pain or distress.
-    3 - Stable, but needs two or more resources (labs, imaging, IV fluids or medication, a specialist).
-    4 - Needs one resource.
-    5 - Needs no resources.
+    Decide the Emergency Severity Index (ESI) level step by step, as in the ESI algorithm:
+    A. Does the patient need an immediate life-saving intervention (airway or breathing support,
+       emergency medication, or haemodynamic intervention such as fluid resuscitation or blood)?
+       If yes: ESI 1.
+    B. Is this a high-risk situation, or is the patient newly confused, lethargic or disoriented,
+       or in severe pain or distress? If yes: ESI 2.
+    C. Otherwise, how many different types of resources will the patient likely need? Resources
+       are: laboratory tests, ECG or X-rays, CT/MRI/ultrasound, IV fluids, IV/IM/nebulised
+       medication, specialty consultation, a simple procedure (counts as one) or a complex procedure
+       (counts as two). History and examination, point-of-care tests, oral medication, tetanus
+       shots, simple wound care, splints and slings do not count.
+       None: ESI 5. One: ESI 4. Two or more: go to D.
+    D. Are the vital signs in the danger zone (heart rate above 100, respiratory rate above 20,
+       oxygen saturation below 92%)? If yes, consider ESI 2; otherwise ESI 3.
   opening_message: Hello, I'm the triage nurse. What brings you in today?
   max_turns: 12
 patient:

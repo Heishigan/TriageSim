@@ -89,8 +89,13 @@ class Evaluator(Agent):
 
 class Sampling(Strict):
     cases: int | None = Field(None, ge=1, description="Number of cases; empty = all")
-    order: Literal["random", "first"] = "random"
+    order: Literal["random", "first", "stratified"] = Field(
+        "random", description="random: seeded random sample; first: cases in file order; stratified: "
+        "seeded random sample with the same ESI distribution as the cohort")
     seed: int = 42
+    stratify_head_injury: bool = Field(
+        False, description="With 'stratified': also keep the share of head-injury cases (ICD label) "
+        "within each ESI level, as in the case pool")
 
 
 class ExperimentConfig(Strict):

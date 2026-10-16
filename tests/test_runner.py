@@ -82,7 +82,7 @@ def test_sampling_is_reproducible(cohorts, tmp_path):
     assert json.loads((a / "plan.json").read_text())["case_ids"] == json.loads((b / "plan.json").read_text())["case_ids"]
 
 
-@pytest.mark.parametrize("preset", ["interview_personas", "retrieval_patient", "chart_review", "multiple_choice"])
+@pytest.mark.parametrize("preset", ["interview", "chart_review", "multiple_choice"])
 def test_every_preset_runs_with_the_demo_model(cohorts, tmp_path, preset):
     run_dir = create_run(demo_config(preset), tmp_path / "runs", cohorts)
     assert execute(run_dir)["state"] == "completed"
@@ -117,3 +117,79 @@ def test_heartbeat_tells_running_from_gone(cohorts, tmp_path, monkeypatch):
     execute(run_dir, on_event=slow)
     assert beats and all(b for b in beats)
     assert read_status(run_dir)["host"]
+
+
+def _cases(levels: dict[int, int], hi_every: int | None = None) -> list[dict]:
+    out, n = [], 0
+    for esi, count in levels.items():
+        for i in range(count):
+            n += 1
+            hi = None if hi_every is None else i % hi_every == 0
+            out.append({"case_id": f"case-{n:05d}", "reference": {"esi": esi, "head_injury_icd": hi},
+                        "nurse_view": {"age": 80, "sex": "F", "vitals": {"heartrate": 80}},
+                        "patient_view": {"hpi": "fell", "medications": []}, "audit": {}})
+    return out
+
+
+def test_allocation_keeps_the_cohort_mix():
+    from triagesim.experiment.runner import allocate
+    cohort = {1: 633, 2: 3811, 3: 2970, 4: 61}            # the ESI mix of the falls cohort
+    pool = {1: 500, 2: 2900, 3: 2300, 4: 50}
+    a = allocate(1000, cohort, pool)
+    assert sum(a.values()) == 1000
+    assert a == {1: 85, 2: 510, 3: 397, 4: 8}               # 8.5 / 51.0 / 39.7 / 0.8 %
+    assert sum(allocate(20, cohort, pool).values()) == 20
+    short = allocate(1000, cohort, {1: 10, 2: 2900, 3: 2300, 4: 50})   # too few ESI 1 cases
+    assert short[1] == 10 and sum(short.values()) == 1000
+
+
+def test_stratified_sample_is_reproducible_and_interleaved():
+    from triagesim.experiment.runner import sample_case_ids
+    cases = _cases({1: 100, 2: 600, 3: 470, 4: 10})
+    config = demo_config(cases=200, order="stratified", seed=42, stratify_head_injury=False)
+    target = {1: 633, 2: 3811, 3: 2970, 4: 61}
+    ids = sample_case_ids(cases, config, target)
+    assert ids == sample_case_ids(cases, config, target) and len(set(ids)) == 200
+    esi = {c["case_id"]: c["reference"]["esi"] for c in cases}
+    counts = {k: sum(esi[i] == k for i in ids) for k in (1, 2, 3, 4)}
+    assert counts == {1: 17, 2: 102, 3: 79, 4: 2}
+    first_half = [esi[i] for i in ids[:100]]
+    assert 30 <= first_half.count(2) <= 70                  # levels are mixed, not in blocks
+    other = sample_case_ids(cases, demo_config(cases=200, order="stratified", seed=7, stratify_head_injury=False), target)
+    assert set(other) != set(ids)
+
+
+def test_stratified_run_records_the_mix(cohorts, tmp_path):
+    run_dir = create_run(demo_config(cases=1, order="stratified"), tmp_path / "runs", cohorts)
+    plan = json.loads((run_dir / "plan.json").read_text())
+    sample = plan["sample"]
+    assert sample["flow"]["sample"] == 1 and sum(r["sample"] for r in sample["esi"]) == 1
+    assert sample["ok"] and len(sample["sample_id"]) == 10
+
+
+def test_head_injury_share_is_kept_within_each_esi_level():
+    from triagesim.experiment.runner import describe_sample, sample_case_ids
+    cases = _cases({1: 100, 2: 600, 3: 470, 4: 10}, hi_every=5)     # 20% head injuries in every level
+    config = demo_config(cases=500, order="stratified", seed=42, stratify_head_injury=True)
+    target = {1: 633, 2: 3811, 3: 2970, 4: 61}
+    ids = sample_case_ids(cases, config, target)
+    summary = describe_sample(cases, ids, target, config)
+    assert summary["flow"]["sample"] == 500 and summary["ok"]
+    assert summary["head_injury"]["sample"] == 100                    # exactly 20%
+    assert [r["sample"] for r in summary["esi"]] == [42, 255, 199, 4]
+    assert all(c["level"] in ("ok", "info") for c in summary["checks"])
+    # without the label the option is refused with a clear message
+    with pytest.raises(ValueError, match="head-injury label"):
+        sample_case_ids(_cases({2: 1000}), config, {2: 1})
+
+
+def test_summary_flags_problems():
+    from triagesim.experiment.runner import describe_sample
+    cases = _cases({2: 10, 3: 10}, hi_every=2)
+    cases[0]["patient_view"]["hpi"] = ""
+    config = demo_config(cases=50, order="random")
+    ids = [c["case_id"] for c in cases]
+    summary = describe_sample(cases, ids, {2: 50, 3: 50}, config)
+    texts = " ".join(c["text"] for c in summary["checks"])
+    assert "only 20 have an ESI" in texts and "1 sampled cases have no history" in texts
+    assert describe_sample(cases, ids + ids[:1], {2: 50, 3: 50}, config)["ok"] is False   # duplicate

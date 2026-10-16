@@ -281,3 +281,56 @@ def test_access_token_required_when_set(api, monkeypatch):
 def test_no_token_means_open_locally(api, monkeypatch):
     monkeypatch.delenv("TRIAGESIM_ACCESS_TOKEN", raising=False)
     assert api.get("/api/cohorts").status_code == 200
+
+
+def test_runs_list_shows_type_and_models(api):
+    name = cohort_with_cases(api)
+    preset = next(p for p in api.get("/api/experiment-presets").json() if p["name"] == "interview")
+    config = demo(preset["config"]) | {"cohort": name}
+    config["patient"]["persona"] = "random"
+    wait_job(api, api.post("/api/runs", json=config).json()["name"])
+    row = api.get("/api/runs").json()[0]
+    assert row["type"] == "Interview · random personas" and row["cohort"] == name
+    assert row["models"] == {"nurse": "qwen2.5:32b", "patient": "llama3.1:8b", "evaluator": "qwen2.5:32b"}
+
+
+def test_delete_run_and_cohort(api):
+    """Deleting asks the server; running runs and cohorts in use by them are protected."""
+    from triagesim import paths
+    from triagesim.experiment.runner import write_status
+    name = cohort_with_cases(api)
+    preset = next(p for p in api.get("/api/experiment-presets").json() if p["name"] == "chart_review")
+    run = api.post("/api/runs", json=demo(preset["config"]) | {"cohort": name}).json()["name"]
+    wait_job(api, run)
+    assert api.get("/api/runs").json()[0]["models"] == {"nurse": "qwen2.5:32b", "patient": None, "evaluator": None}
+    assert api.get(f"/api/cohorts/{name}/runs").json() == [{"name": run, "active": False}]
+
+    # a run still going elsewhere (Slurm) cannot be deleted, nor can its cohort
+    write_status(paths.runs_dir() / run, state="running", heartbeat=time.time(), slurm_job="777")
+    __import__("triagesim.server.app", fromlist=["jobs"]).jobs._jobs.pop(run, None)
+    r = api.delete(f"/api/runs/{run}")
+    assert r.status_code == 409 and "scancel 777" in r.json()["detail"]
+    assert api.delete(f"/api/cohorts/{name}").status_code == 409
+
+    write_status(paths.runs_dir() / run, state="stopped")
+    assert api.delete(f"/api/runs/{run}").json() == {"deleted": run}
+    assert not (paths.runs_dir() / run).exists() and api.get("/api/runs").json() == []
+    assert api.delete(f"/api/cohorts/{name}").json() == {"deleted": name}
+    assert api.get("/api/cohorts").json() == []
+    assert api.delete(f"/api/cohorts/{name}").status_code == 404
+    assert api.delete("/api/runs/..%2F..").status_code in (404, 405)   # never reaches a folder
+    assert api.delete("/api/runs/no-such-run").status_code == 404
+
+
+def test_sample_preview_before_starting(api):
+    name = cohort_with_cases(api)
+    preset = next(p for p in api.get("/api/experiment-presets").json() if p["name"] == "chart_review")
+    config = demo(preset["config"]) | {"cohort": name}
+    config["sampling"] = {"cases": 1, "order": "stratified", "seed": 42, "stratify_head_injury": True}
+    preview = api.post("/api/experiments/preview", json=config).json()
+    assert preview["ok"] and preview["flow"]["sample"] == 1 and preview["head_injury"] is not None
+    run = api.post("/api/runs", json=config).json()["name"]
+    wait_job(api, run)
+    plan = api.get(f"/api/runs/{run}").json()["plan"]
+    assert plan["sample"]["sample_id"] == preview["sample_id"]       # the run got exactly the previewed cases
+    assert api.post("/api/experiments/preview", json=config | {"cohort": "nope"}).status_code == 400

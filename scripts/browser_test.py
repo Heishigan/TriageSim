@@ -47,12 +47,18 @@ with sync_playwright() as p:
     button("Build case files"); page.wait_for_selector("text=HPIs changed by redaction", timeout=120000); shot("06_cases")
     button("Case files"); page.wait_for_selector("text=Nurse sees at arrival"); shot("07_case_files")
     button("Case review"); page.wait_for_selector("text=cases in this group", timeout=60000); shot("08_case_review")
-    link("4 New experiment"); page.click("text=interview personas"); page.wait_for_selector("text=Nurse agent")
+    link("4 New experiment"); page.click("text=Choose the patient type and persona"); page.wait_for_selector("text=Nurse agent")
+    page.locator("select").filter(has=page.locator("option", has_text="stoic")).select_option("random")
     for select in page.locator("select").all():
         if select.locator("option[value=__demo]").count():
             select.select_option("__demo")
     page.fill("input[type=number] >> nth=0", "4"); time.sleep(1); shot("09_experiment")
-    button("Start run"); page.wait_for_selector("text=Conversation", timeout=30000); time.sleep(1.5); shot("10_live")
+    page.get_by_text("Also keep the share of head-injury cases").click()
+    page.wait_for_selector("text=Head-injury share matches", timeout=30000); shot("09b_sample_check")
+    button("Start run"); page.wait_for_selector("text=runs with the same ID use exactly the same patients")
+    shot("09c_confirm")
+    page.get_by_role("alertdialog").get_by_role("button", name="Start run").click()
+    page.wait_for_selector("text=Conversation", timeout=30000); time.sleep(1.5); shot("10_live")
     page.wait_for_selector("text=completed", timeout=120000)
     button("Results"); page.wait_for_selector("text=Agreement with nurse"); shot("11_results")
     if page.locator("text=This page ran into a problem").count():
@@ -60,6 +66,22 @@ with sync_playwright() as p:
     button("Cases"); page.get_by_role("button", name="Transcript").first.click()
     page.wait_for_selector("text=Transcript ·"); shot("12_transcript")
     link("3 Models"); page.wait_for_selector("text=Model catalog"); shot("13_models")
+
+    # Runs list: type and models; deleting asks first, Cancel keeps everything
+    link("5 Runs & results"); page.wait_for_selector("text=Interview · random personas"); shot("14_runs")
+    link("2 Cohorts & cases"); page.get_by_role("button", name="Delete", exact=True).first.click()
+    page.wait_for_selector("text=1 run uses this cohort"); shot("15_delete_cohort_warning")
+    button("Cancel"); page.wait_for_selector("text=Saved cohorts")
+    if page.get_by_role("alertdialog").count():
+        errors.append("dialog still open after Cancel")
+    link("5 Runs & results"); page.get_by_role("button", name="Delete", exact=True).first.click()
+    page.wait_for_selector("text=permanently deletes its results"); shot("16_delete_run")
+    button("Delete run"); page.wait_for_selector("text=No runs yet.")
+    link("2 Cohorts & cases"); page.get_by_role("button", name="Delete", exact=True).first.click()
+    page.wait_for_selector("text=permanently deletes the cohort")
+    if page.locator("text=uses this cohort").count():
+        errors.append("cohort still reported as in use after its run was deleted")
+    button("Delete cohort"); page.wait_for_selector("text=No cohorts yet."); shot("17_deleted")
     browser.close()
 
 if errors:

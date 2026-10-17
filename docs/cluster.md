@@ -88,6 +88,11 @@ itself. Everything works as on your PC: Models (downloads go to `~/.ollama/model
 with batch jobs), New experiment, live runs, results. `scancel <jobid>` stops it and frees
 the GPU; runs stopped that way can be resumed later.
 
+To load new code (after `git pull`) without a new job, restart only the app from the login node:
+`srun --jobid=<jobid> --overlap pkill -f "uvicorn triagesim.server.app"`. The job script starts it
+again within seconds, at the same address with the same access token; unfinished runs show as
+interrupted and can be resumed.
+
 ## 7. Watch batch jobs in the app (optional)
 
 On the login node: `uv run triagesim ui --no-browser --port 8765`

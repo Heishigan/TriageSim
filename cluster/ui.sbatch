@@ -50,8 +50,15 @@ $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || 
    and open it in your browser. Afterwards http://127.0.0.1:18765 is enough.
 
 Stop the app when done (frees the GPU):  scancel $SLURM_JOB_ID
+Restart only the app, e.g. after 'git pull' (same address, same job; on the login node):
+    srun --jobid=$SLURM_JOB_ID --overlap pkill -f "uvicorn triagesim.server.app"
 Runs started in the app stop with it; resume them later from the app.
 ============================================================================
 MSG
 trap 'kill "$OLLAMA_PID" 2>/dev/null; rm -f "$URL_FILE"' EXIT
-uv run --frozen triagesim ui --no-browser --host "$NODE_IP" --port "$PORT"
+# The app restarts by itself when it stops (see the restart command above); scancel ends the job.
+while true; do
+    uv run --frozen triagesim ui --no-browser --host "$NODE_IP" --port "$PORT"
+    echo "$(date +%H:%M:%S)  TriageSim stopped; restarting in 3 s (scancel $SLURM_JOB_ID ends the job)"
+    sleep 3
+done

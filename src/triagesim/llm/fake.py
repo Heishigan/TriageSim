@@ -16,7 +16,7 @@ class FakeModel:
         self.replies = replies or ["OK"]
         self.calls: list[list[Message]] = []
 
-    def chat(self, messages, *, temperature=None, seed=None, json_schema=None) -> ChatResult:
+    def chat(self, messages, *, temperature=None, seed=None, json_schema=None, max_tokens=None) -> ChatResult:
         self.calls.append(list(messages))
         if callable(self.replies):
             text = self.replies(messages)

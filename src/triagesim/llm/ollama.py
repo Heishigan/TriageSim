@@ -43,9 +43,10 @@ class OllamaClient:
 
     # ---- chat --------------------------------------------------------------------
     def chat(self, model: str, messages: list[Message], *, temperature: float | None = None,
-             seed: int | None = None, json_schema: dict | None = None) -> ChatResult:
+             seed: int | None = None, json_schema: dict | None = None, max_tokens: int | None = None) -> ChatResult:
         payload: dict[str, Any] = {"model": model, "messages": [m.as_dict() for m in messages], "stream": False}
-        options = {k: v for k, v in {"temperature": temperature, "seed": seed}.items() if v is not None}
+        options = {k: v for k, v in {"temperature": temperature, "seed": seed, "num_predict": max_tokens}.items()
+                   if v is not None}
         if options:
             payload["options"] = options
         if json_schema is not None:
@@ -210,8 +211,9 @@ class OllamaModel:
     def __init__(self, client: OllamaClient, name: str):
         self.client, self.name = client, name
 
-    def chat(self, messages, *, temperature=None, seed=None, json_schema=None) -> ChatResult:
-        return self.client.chat(self.name, messages, temperature=temperature, seed=seed, json_schema=json_schema)
+    def chat(self, messages, *, temperature=None, seed=None, json_schema=None, max_tokens=None) -> ChatResult:
+        return self.client.chat(self.name, messages, temperature=temperature, seed=seed, json_schema=json_schema,
+                                max_tokens=max_tokens)
 
 
 def download_from_huggingface(repo: str, filename: str, token: str | None, cache_dir: Path,

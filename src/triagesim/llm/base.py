@@ -31,6 +31,7 @@ class ChatModel(Protocol):
     name: str
 
     def chat(self, messages: list[Message], *, temperature: float | None = None,
-             seed: int | None = None, json_schema: dict[str, Any] | None = None) -> ChatResult:
+             seed: int | None = None, json_schema: dict[str, Any] | None = None,
+             max_tokens: int | None = None) -> ChatResult:
         """Return the model's reply. With ``json_schema`` the reply must be JSON matching it."""
         ...

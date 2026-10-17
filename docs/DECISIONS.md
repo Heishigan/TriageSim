@@ -273,3 +273,8 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   counts), danger-zone vital signs. Same text in every condition. Motivation: a stepwise ESI
   decision-tree prompt clearly outperformed open prompts in Benning et al. (medRxiv 2026).
   Presets also tick head-injury stratification by default.
+- D79. Every model call carries a reply-length cap (ModelSettings.max_tokens, default 8192 tokens,
+  reasoning included; Ollama num_predict), shown per agent in the New experiment form. Reason: in
+  the pilot Baichuan-M2-32B wrote 17,765 tokens in one reply until the 10-minute call timeout, which
+  stalled the run. A cut-off reply is invalid JSON, so it counts as a format retry/failure instead
+  of blocking the run. Prompts unchanged.

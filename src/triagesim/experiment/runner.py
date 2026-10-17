@@ -253,10 +253,39 @@ def write_status(run_dir: Path, **changes) -> dict:
 
 
 def read_results(run_dir: Path) -> list[dict]:
+    """One result per case. A line cut off when a job was killed mid-write is skipped (that case
+    runs again on resume), and a case that appears twice counts once (the first result)."""
     path = Path(run_dir) / "results.jsonl"
     if not path.is_file():
         return []
-    return [_upgrade(json.loads(line)) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    out, seen = [], set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            result = _upgrade(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+        if result.get("case_id") in seen:
+            continue
+        seen.add(result.get("case_id"))
+        out.append(result)
+    return out
+
+
+def _end_with_newline(path: Path) -> None:
+    """After a job was killed mid-write, start the next result on a fresh line."""
+    if path.is_file() and path.stat().st_size:
+        with open(path, "rb") as f:
+            f.seek(-1, 2)
+            last = f.read(1)
+        if last != b"\n":
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("\n")
+
+
+# Waits (seconds) before retrying a case after a model/server error; then the run stops.
+CASE_RETRY_WAITS = (30, 120)
 
 
 def _upgrade(result: dict) -> dict:
@@ -326,12 +355,24 @@ def execute(run_dir: Path, stop: threading.Event | None = None,
         if on_event:
             on_event(event)
 
+    _end_with_newline(run_dir / "results.jsonl")
     try:
         for case_id in todo:
             if stop.is_set():
                 raise Stopped()
             write_status(run_dir, current_case=case_id)
-            result = run_case(cases[case_id], config, models, emit=emit, should_stop=stop.is_set, embed=embed)
+            for attempt, wait in enumerate((*CASE_RETRY_WAITS, None)):
+                try:
+                    result = run_case(cases[case_id], config, models, emit=emit, should_stop=stop.is_set,
+                                      embed=embed)
+                    break
+                except ModelError as exc:     # Ollama busy, restarting or briefly unreachable
+                    if wait is None:
+                        raise
+                    emit({"type": "case_retry", "case_id": case_id, "attempt": attempt + 1,
+                          "wait_seconds": wait, "error": str(exc)})
+                    if stop.wait(wait):
+                        raise Stopped() from exc
             with open(run_dir / "results.jsonl", "a", encoding="utf-8") as f:
                 f.write(json.dumps(result, ensure_ascii=False) + "\n")
             done_ids.add(case_id)

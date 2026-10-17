@@ -278,3 +278,7 @@ Newest at the bottom. If code and this file disagree, stop and ask Albert.
   the pilot Baichuan-M2-32B wrote 17,765 tokens in one reply until the 10-minute call timeout, which
   stalled the run. A cut-off reply is invalid JSON, so it counts as a format retry/failure instead
   of blocking the run. Prompts unchanged.
+- D80. Robustness for long unattended runs: a result line cut off when a job is killed mid-write is
+  skipped (the case reruns on resume) and the next result starts on a fresh line; a case that
+  appears twice counts once; a model/server error on a case is retried after 30 s and 2 min before
+  the run stops (events.jsonl records each retry).

@@ -244,12 +244,20 @@ def read_status(run_dir: Path) -> dict:
         return {}
 
 
+_STATUS_LOCK = threading.Lock()
+
+
 def write_status(run_dir: Path, **changes) -> dict:
-    status = {**read_status(run_dir), **changes, "updated": datetime.now().isoformat(timespec="seconds")}
-    tmp = Path(run_dir) / "status.json.tmp"
-    tmp.write_text(json.dumps(status, indent=2))
-    tmp.replace(Path(run_dir) / "status.json")
-    return status
+    """Update status.json atomically. The run loop and its heartbeat thread both write it, so the
+    read-modify-write is locked and each write uses its own temporary file (a shared one let one
+    thread move the other's file away mid-write and crash a long run)."""
+    import os
+    with _STATUS_LOCK:
+        status = {**read_status(run_dir), **changes, "updated": datetime.now().isoformat(timespec="seconds")}
+        tmp = Path(run_dir) / f"status.json.{os.getpid()}.{threading.get_ident()}.tmp"
+        tmp.write_text(json.dumps(status, indent=2))
+        tmp.replace(Path(run_dir) / "status.json")
+        return status
 
 
 def read_results(run_dir: Path) -> list[dict]:
@@ -343,7 +351,10 @@ def execute(run_dir: Path, stop: threading.Event | None = None,
 
     def heartbeat() -> None:
         while not beating.wait(HEARTBEAT_SECONDS):
-            write_status(run_dir, heartbeat=time.time())
+            try:
+                write_status(run_dir, heartbeat=time.time())
+            except OSError:  # a missed heartbeat must never stop the run
+                pass
     threading.Thread(target=heartbeat, daemon=True, name="run-heartbeat").start()
 
     events = open(run_dir / "events.jsonl", "a", encoding="utf-8")

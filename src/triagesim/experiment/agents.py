@@ -45,7 +45,8 @@ def ask_structured(model: ChatModel, settings: ModelSettings, messages: list[Mes
 
     Returns (parsed or None if it failed twice, raw text of the last reply).
     """
-    result = model.chat(messages, temperature=settings.temperature, seed=settings.seed, json_schema=schema)
+    result = model.chat(messages, temperature=settings.temperature, seed=settings.seed, json_schema=schema,
+                        max_tokens=settings.max_tokens)
     usage.add(result)
     try:
         return parse(result.content), result.content
@@ -53,7 +54,8 @@ def ask_structured(model: ChatModel, settings: ModelSettings, messages: list[Mes
         usage.format_retries += 1
         retry = messages + [Message("assistant", result.content),
                             Message("user", f"That reply was not valid ({exc}). Reply again in the required JSON format.")]
-        result = model.chat(retry, temperature=settings.temperature, seed=settings.seed, json_schema=schema)
+        result = model.chat(retry, temperature=settings.temperature, seed=settings.seed, json_schema=schema,
+                            max_tokens=settings.max_tokens)
         usage.add(result)
         try:
             return parse(result.content), result.content
@@ -72,7 +74,8 @@ class LLMPatient:
 
     def reply(self, nurse_message: str) -> str:
         self.history.append(Message("user", nurse_message))
-        r = self.model.chat(self.history, temperature=self.config.model.temperature, seed=self.config.model.seed)
+        r = self.model.chat(self.history, temperature=self.config.model.temperature, seed=self.config.model.seed,
+                            max_tokens=self.config.model.max_tokens)
         self.usage.add(r)
         self.history.append(Message("assistant", r.content))
         return r.content
@@ -138,7 +141,7 @@ class RetrievalPatient:
         self.last_retrieved = [self.chunks[i] for i in ranked[: self.config.retrieval_top_k]]
         prompt = RETRIEVAL_PROMPT.format(facts="\n".join(self.last_retrieved), question=nurse_message)
         r = self.model.chat([Message("user", prompt)], temperature=self.config.model.temperature,
-                            seed=self.config.model.seed)
+                            seed=self.config.model.seed, max_tokens=self.config.model.max_tokens)
         self.usage.add(r)
         return r.content
 

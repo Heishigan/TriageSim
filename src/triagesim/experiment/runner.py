@@ -244,19 +244,57 @@ def read_status(run_dir: Path) -> dict:
         return {}
 
 
+_STATUS_LOCK = threading.Lock()
+
+
 def write_status(run_dir: Path, **changes) -> dict:
-    status = {**read_status(run_dir), **changes, "updated": datetime.now().isoformat(timespec="seconds")}
-    tmp = Path(run_dir) / "status.json.tmp"
-    tmp.write_text(json.dumps(status, indent=2))
-    tmp.replace(Path(run_dir) / "status.json")
-    return status
+    """Update status.json atomically. The run loop and its heartbeat thread both write it, so the
+    read-modify-write is locked and each write uses its own temporary file (a shared one let one
+    thread move the other's file away mid-write and crash a long run)."""
+    import os
+    with _STATUS_LOCK:
+        status = {**read_status(run_dir), **changes, "updated": datetime.now().isoformat(timespec="seconds")}
+        tmp = Path(run_dir) / f"status.json.{os.getpid()}.{threading.get_ident()}.tmp"
+        tmp.write_text(json.dumps(status, indent=2))
+        tmp.replace(Path(run_dir) / "status.json")
+        return status
 
 
 def read_results(run_dir: Path) -> list[dict]:
+    """One result per case. A line cut off when a job was killed mid-write is skipped (that case
+    runs again on resume), and a case that appears twice counts once (the first result)."""
     path = Path(run_dir) / "results.jsonl"
     if not path.is_file():
         return []
-    return [_upgrade(json.loads(line)) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    out, seen = [], set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            result = _upgrade(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+        if result.get("case_id") in seen:
+            continue
+        seen.add(result.get("case_id"))
+        out.append(result)
+    return out
+
+
+def _end_with_newline(path: Path) -> None:
+    """After a job was killed mid-write, start the next result on a fresh line."""
+    if path.is_file() and path.stat().st_size:
+        with open(path, "rb") as f:
+            f.seek(-1, 2)
+            last = f.read(1)
+        if last != b"\n":
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("\n")
+
+
+# Waits (seconds) before retrying a case after a model/server error; then the run stops.
+CASE_RETRY_WAITS = (30, 120)
+MAX_FAILED_IN_A_ROW = 3       # this many failing cases in a row: a real fault, stop the run
 
 
 def _upgrade(result: dict) -> dict:
@@ -298,6 +336,10 @@ def execute(run_dir: Path, stop: threading.Event | None = None,
     """Run (or resume) every planned case that has no result yet."""
     run_dir = Path(run_dir)
     stop = stop or threading.Event()
+    previous = read_status(run_dir)
+    if previous.get("state") == "running" and is_alive(previous):
+        raise RunBusy(f"{run_dir.name} is already running (host {previous.get('host')}, "
+                      f"Slurm job {previous.get('slurm_job')}). Stop it first.")
     config = ExperimentConfig.from_yaml(run_dir / "experiment.yaml")
     plan = json.loads((run_dir / "plan.json").read_text())
     cases = {c["case_id"]: c for c in load_cases(Path(plan["cohort_dir"]))}
@@ -314,7 +356,10 @@ def execute(run_dir: Path, stop: threading.Event | None = None,
 
     def heartbeat() -> None:
         while not beating.wait(HEARTBEAT_SECONDS):
-            write_status(run_dir, heartbeat=time.time())
+            try:
+                write_status(run_dir, heartbeat=time.time())
+            except OSError:  # a missed heartbeat must never stop the run
+                pass
     threading.Thread(target=heartbeat, daemon=True, name="run-heartbeat").start()
 
     events = open(run_dir / "events.jsonl", "a", encoding="utf-8")
@@ -326,17 +371,51 @@ def execute(run_dir: Path, stop: threading.Event | None = None,
         if on_event:
             on_event(event)
 
+    _end_with_newline(run_dir / "results.jsonl")
+    skipped: list[str] = []          # cases that failed this time; no result, so a resume retries them
+    in_a_row = 0
+    last_error = ""
     try:
         for case_id in todo:
             if stop.is_set():
                 raise Stopped()
             write_status(run_dir, current_case=case_id)
-            result = run_case(cases[case_id], config, models, emit=emit, should_stop=stop.is_set, embed=embed)
+            try:
+                for attempt, wait in enumerate((*CASE_RETRY_WAITS, None)):
+                    try:
+                        result = run_case(cases[case_id], config, models, emit=emit, should_stop=stop.is_set,
+                                          embed=embed)
+                        break
+                    except ModelError as exc:     # Ollama busy, restarting or briefly unreachable
+                        if wait is None:
+                            raise
+                        emit({"type": "case_retry", "case_id": case_id, "attempt": attempt + 1,
+                              "wait_seconds": wait, "error": str(exc)})
+                        if stop.wait(wait):
+                            raise Stopped() from exc
+            except Stopped:
+                raise
+            except Exception as exc:  # one bad case must not end a 1,000-case run: skip it, go on
+                in_a_row += 1
+                skipped.append(case_id)
+                last_error = str(exc) if isinstance(exc, ModelError) else repr(exc)
+                emit({"type": "case_error", "case_id": case_id, "error": last_error,
+                      "traceback": traceback.format_exc(limit=5)})
+                write_status(run_dir, skipped_cases=skipped)
+                if in_a_row >= MAX_FAILED_IN_A_ROW:
+                    raise
+                continue
+            in_a_row = 0
             with open(run_dir / "results.jsonl", "a", encoding="utf-8") as f:
                 f.write(json.dumps(result, ensure_ascii=False) + "\n")
             done_ids.add(case_id)
             write_status(run_dir, done=len(done_ids))
-        return write_status(run_dir, state="completed", current_case=None,
+        if skipped:
+            emit({"type": "run_failed", "error": f"{len(skipped)} case(s) failed"})
+            return write_status(run_dir, state="failed", current_case=None, skipped_cases=skipped,
+                                error=f"{len(skipped)} case(s) failed and were skipped; resume to retry them. "
+                                      f"Last error: {last_error}")
+        return write_status(run_dir, state="completed", current_case=None, skipped_cases=None,
                             finished=datetime.now().isoformat(timespec="seconds"))
     except Stopped:
         emit({"type": "run_stopped"})
@@ -351,6 +430,18 @@ def execute(run_dir: Path, stop: threading.Event | None = None,
     finally:
         beating.set()
         events.close()
+
+
+class RunBusy(RuntimeError):
+    """Another process is running this run right now (its heartbeat is fresh)."""
+
+
+def find_run(name: str, runs_dir: Path | None = None) -> Path | None:
+    """The newest run folder of the experiment ``name`` ('<name>_<timestamp>'), or None."""
+    import re
+    pattern = re.compile(rf"^{re.escape(name)}_\d{{8}}-\d{{6}}(-\d+)?$")
+    matches = [p for p in list_runs(runs_dir) if pattern.match(p.name)]
+    return matches[0] if matches else None
 
 
 def list_runs(runs_dir: Path | None = None) -> list[Path]:

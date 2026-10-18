@@ -139,3 +139,18 @@ def test_stop_interrupts_a_case(case):
         return calls["n"] > 2
     with pytest.raises(Stopped):
         run_case(case, config("interview"), models(doctor([ASK("q")] * 20)), should_stop=stop)
+
+
+def test_reply_length_cap_reaches_every_model_call(case):
+    """Every agent call carries the agent's max_tokens (default 8192), so no reply can run on forever."""
+    seen = []
+
+    class Spy(FakeModel):
+        def chat(self, messages, **kw):
+            seen.append(kw.get("max_tokens"))
+            return super().chat(messages, **kw)
+    nurse_and_evaluator = doctor([ASK("Did you hit your head?"), DECIDE(2)])
+    c = config("interview", **{"nurse.model.max_tokens": 500})
+    run_case(case, c, {"qwen2.5:32b": Spy("qwen2.5:32b", nurse_and_evaluator.replies),
+                       "llama3.1:8b": Spy("llama3.1:8b", ["No, I did not."])})
+    assert 500 in seen and 8192 in seen and None not in seen

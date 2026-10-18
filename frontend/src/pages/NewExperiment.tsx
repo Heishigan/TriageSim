@@ -229,6 +229,9 @@ function AgentCard({ title, path, agent, set, fields, models, demoMode, exclude,
           <Field label="Temperature" hint="0 = most deterministic"><input type="number" step={0.1} min={0} max={2} className={inputClass} value={m.temperature ?? ""}
             onChange={(e) => set(`${path}.model.temperature`, e.target.value === "" ? null : Number(e.target.value))} /></Field>
           <Field label="Seed"><input type="number" className={inputClass} value={m.seed ?? ""} onChange={(e) => set(`${path}.model.seed`, e.target.value === "" ? null : Number(e.target.value))} /></Field>
+          <Field label="Max reply length" hint="Tokens, reasoning included; stops a runaway reply. Empty = no limit">
+            <input type="number" min={64} step={512} className={inputClass} value={m.max_tokens ?? ""}
+              onChange={(e) => set(`${path}.model.max_tokens`, e.target.value === "" ? null : Number(e.target.value))} /></Field>
           {m.source === "huggingface" && <>
             <Field label="HF repository"><input className={inputClass} value={m.hf_repo ?? ""} onChange={(e) => set(`${path}.model.hf_repo`, e.target.value)} /></Field>
             <Field label="GGUF file"><input className={inputClass} value={m.hf_file ?? ""} onChange={(e) => set(`${path}.model.hf_file`, e.target.value)} /></Field>

@@ -518,7 +518,10 @@ def pull_model(body: ModelIn) -> dict:
 def delete_model(name: str) -> dict:
     """Delete an installed model, unless a running experiment is using it."""
     for job in jobs.running("run"):
-        cfg = ExperimentConfig.from_yaml(paths.runs_dir() / job.label / "experiment.yaml")
+        path = paths.runs_dir() / job.label / "experiment.yaml"
+        if not path.is_file():         # the run is ending or its folder was removed
+            continue
+        cfg = ExperimentConfig.from_yaml(path)
         if name in {m.name for m in cfg.models()}:
             raise HTTPException(409, f"{name} is used by the running experiment {job.label}. Stop it first.")
     try:

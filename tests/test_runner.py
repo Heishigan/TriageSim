@@ -193,3 +193,77 @@ def test_summary_flags_problems():
     texts = " ".join(c["text"] for c in summary["checks"])
     assert "only 20 have an ESI" in texts and "1 sampled cases have no history" in texts
     assert describe_sample(cases, ids + ids[:1], {2: 50, 3: 50}, config)["ok"] is False   # duplicate
+
+
+def test_half_written_result_is_skipped_and_rerun(cohorts, tmp_path):
+    """A job killed mid-write leaves a cut-off last line: resume reruns that case and counts it once."""
+    run_dir = create_run(demo_config(cases=2), tmp_path / "runs", cohorts)
+    assert execute(run_dir)["state"] == "completed"
+    lines = (run_dir / "results.jsonl").read_text().splitlines()
+    (run_dir / "results.jsonl").write_text(lines[0] + "\n" + lines[1][:40])      # second line cut off
+    assert len(read_results(run_dir)) == 1
+    assert execute(run_dir)["state"] == "completed"
+    results = read_results(run_dir)
+    assert len(results) == 2 and len({r["case_id"] for r in results}) == 2
+
+
+def test_duplicate_results_count_once(cohorts, tmp_path):
+    run_dir = create_run(demo_config(cases=1), tmp_path / "runs", cohorts)
+    execute(run_dir)
+    line = (run_dir / "results.jsonl").read_text()
+    (run_dir / "results.jsonl").write_text(line + line)
+    assert len(read_results(run_dir)) == 1
+
+
+def test_brief_model_error_is_retried(cohorts, tmp_path):
+    """One failed call (Ollama restarting) does not stop the run; the case is retried."""
+    from triagesim.llm.base import ModelError
+    from triagesim.llm.demo import DemoModel
+    run_dir = create_run(demo_config("chart_review", cases=1), tmp_path / "runs", cohorts)
+
+    class Flaky(DemoModel):
+        calls = 0
+
+        def chat(self, messages, **kw):
+            Flaky.calls += 1
+            if Flaky.calls == 1:
+                raise ModelError("Ollama is not reachable")
+            return super().chat(messages, **kw)
+    status = execute(run_dir, models={"qwen2.5:32b": Flaky("qwen2.5:32b")})
+    assert status["state"] == "completed" and len(read_results(run_dir)) == 1
+    assert '"case_retry"' in (run_dir / "events.jsonl").read_text()
+
+
+def test_one_bad_case_is_skipped_and_retried_on_resume(cohorts, tmp_path, monkeypatch):
+    """A case that crashes does not end the run: the others finish, the bad one is retried later."""
+    from triagesim.experiment import runner
+    run_dir = create_run(demo_config("chart_review", cases=2), tmp_path / "runs", cohorts)
+    first = json.loads((run_dir / "plan.json").read_text())["case_ids"][0]
+    real = runner.run_case
+
+    def flaky(case, *a, **k):
+        if case["case_id"] == first:
+            raise KeyError("vitals")
+        return real(case, *a, **k)
+    monkeypatch.setattr(runner, "run_case", flaky)
+    status = execute(run_dir)
+    assert status["state"] == "failed" and status["skipped_cases"] == [first] and status["done"] == 1
+    assert "KeyError" in status["error"] and '"case_error"' in (run_dir / "events.jsonl").read_text()
+    monkeypatch.setattr(runner, "run_case", real)
+    status = execute(run_dir)                                      # resume: only the skipped case runs
+    assert status["state"] == "completed" and status["done"] == 2 and not status.get("skipped_cases")
+    assert len(read_results(run_dir)) == 2
+
+
+def test_failing_cases_in_a_row_stop_the_run(cohorts, tmp_path, monkeypatch):
+    from triagesim.experiment import runner
+    monkeypatch.setattr(runner, "MAX_FAILED_IN_A_ROW", 2)
+    run_dir = create_run(demo_config("chart_review", cases=2), tmp_path / "runs", cohorts)
+    calls = []
+
+    def broken(case, *a, **k):
+        calls.append(case["case_id"])
+        raise RuntimeError("bug")
+    monkeypatch.setattr(runner, "run_case", broken)
+    status = execute(run_dir)
+    assert status["state"] == "failed" and "bug" in status["error"] and len(calls) == 2

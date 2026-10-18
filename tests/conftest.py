@@ -123,3 +123,10 @@ def app_dirs(data_dir, tmp_path, monkeypatch):
     monkeypatch.setenv("TRIAGESIM_DATA_DIR", str(data_dir))
     monkeypatch.setenv("TRIAGESIM_OUTPUT_DIR", str(tmp_path / "outputs"))
     return data_dir, tmp_path / "outputs"
+
+
+@pytest.fixture(autouse=True)
+def _no_retry_waits(monkeypatch):
+    """Case retries after a model error wait 0 s in tests instead of 30 s and 2 min."""
+    from triagesim.experiment import runner
+    monkeypatch.setattr(runner, "CASE_RETRY_WAITS", (0, 0))

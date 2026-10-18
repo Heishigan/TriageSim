@@ -110,7 +110,7 @@ def _run(args) -> int:
     import signal
     import threading
     from .experiment.config import ExperimentConfig
-    from .experiment.runner import create_run, execute, read_status
+    from .experiment.runner import RunBusy, create_run, execute, read_status
     if args.resume:
         run_dir = Path(args.resume)
     else:
@@ -119,6 +119,9 @@ def _run(args) -> int:
         except (FileNotFoundError, ValueError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
+    if args.create_only:
+        print(run_dir)
+        return 0
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())       # Slurm time limit: stop cleanly
     total = read_status(run_dir).get("total", 0)
@@ -129,8 +132,13 @@ def _run(args) -> int:
             st = read_status(run_dir)
             print(f"[{st.get('done', 0) + 1}/{total}] {event['case_id']}: ESI {event['esi']} "
                   f"(reference {event['reference_esi']}), {event['questions']} questions", flush=True)
+        elif event["type"] == "case_error":
+            print(f"[skipped] {event['case_id']}: {event['error']} (retried on resume)", flush=True)
     try:
         status = execute(run_dir, stop=stop, on_event=show)
+    except RunBusy as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 3
     except KeyboardInterrupt:
         stop.set()
         status = read_status(run_dir)
@@ -253,6 +261,8 @@ def main(argv: list[str] | None = None) -> int:
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("--experiment", help="experiment YAML file")
     group.add_argument("--resume", help="run folder to resume")
+    p.add_argument("--create-only", action="store_true",
+                   help="with --experiment: create the run folder (plan and sample) and print it, run nothing")
     p.set_defaults(func=_run)
 
     args = parser.parse_args(argv)

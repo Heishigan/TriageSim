@@ -21,6 +21,9 @@ class ModelSettings(Strict):
     hf_file: str | None = Field(None, description="GGUF file name in that repo")
     temperature: float | None = Field(None, ge=0, le=2)
     seed: int | None = None
+    max_tokens: int | None = Field(
+        8192, ge=64, description="Most tokens one reply may have, reasoning included. Stops a model that "
+        "keeps writing; a cut-off reply counts as a format failure. Empty = no limit")
 
     @model_validator(mode="after")
     def _local_only(self):

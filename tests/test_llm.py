@@ -46,6 +46,8 @@ def test_chat_sends_options_and_schema():
     body = json.loads(mock.requests[-1].content)
     assert body["options"] == {"temperature": 0.0, "seed": 42} and body["format"] == {"type": "object"}
     assert result.content == "reply from qwen2.5:32b" and result.prompt_tokens == 12
+    client(mock).chat("qwen2.5:32b", [Message("user", "hi")], max_tokens=8192)
+    assert json.loads(mock.requests[-1].content)["options"] == {"num_predict": 8192}   # caps a runaway reply
 
 
 def test_pull_reports_progress_and_errors():

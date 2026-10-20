@@ -18,6 +18,7 @@ FIELDS = {
     "allergies": ("patient_view", "Allergies"),
     "medications": ("patient_view", "Home medications"),
     "persona": ("experiment", "Behaviour assigned to the patient"),
+    "similar_cases": ("retrieval", "Similar past patients and the ESI their triage nurse gave (nurse, chart review)"),
     "esi": ("reference", "Triage nurse's ESI (ground truth)"),
     "disposition": ("reference", "ED disposition"),
     "head_injury": ("reference", "Head-injury label (ICD)"),

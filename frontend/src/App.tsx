@@ -6,6 +6,7 @@ import Home from "./pages/Home";
 import Data from "./pages/Data";
 import Cohorts from "./pages/Cohorts";
 import CohortDetail from "./pages/CohortDetail";
+import CaseDetail from "./pages/CaseDetail";
 import Models from "./pages/Models";
 import NewExperiment from "./pages/NewExperiment";
 import Runs from "./pages/Runs";
@@ -59,6 +60,7 @@ export default function App() {
           <Route path="/data" element={<Data />} />
           <Route path="/cohorts" element={<Cohorts />} />
           <Route path="/cohorts/:name" element={<CohortDetail />} />
+          <Route path="/cohorts/:name/cases/:caseId" element={<CaseDetail />} />
           <Route path="/models" element={<Models />} />
           <Route path="/experiments/new" element={<NewExperiment />} />
           <Route path="/runs" element={<Runs />} />

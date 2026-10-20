@@ -230,8 +230,12 @@ def create_run(config: ExperimentConfig, runs_dir: Path | None = None, cohorts_d
         run_dir, n = root / f"{config.name}_{stamp}-{n}", n + 1
     run_dir.mkdir(parents=True)
     config.to_yaml(run_dir / "experiment.yaml")
-    (run_dir / "plan.json").write_text(json.dumps({"cohort_dir": str(cohort_dir), "sample": summary, "case_ids": case_ids},
-                                                  indent=2))
+    plan = {"cohort_dir": str(cohort_dir), "sample": summary, "case_ids": case_ids}
+    if config.nurse.similar_cases:   # fixed example pool: every cohort case outside the sample
+        from .similar import build_pool, save_pool
+        info = save_pool(run_dir, build_pool(load_cases(cohort_dir), case_ids), case_ids)
+        plan["similar_cases_pool"] = {"pool_id": info["pool_id"], "cases": info["cases"]}
+    (run_dir / "plan.json").write_text(json.dumps(plan, indent=2))
     write_status(run_dir, state="created", total=len(case_ids), done=0, version=__version__,
                  created=datetime.now().isoformat(timespec="seconds"))
     return run_dir
@@ -371,11 +375,14 @@ def execute(run_dir: Path, stop: threading.Event | None = None,
         if on_event:
             on_event(event)
 
+    similar = None
     _end_with_newline(run_dir / "results.jsonl")
     skipped: list[str] = []          # cases that failed this time; no result, so a resume retries them
     in_a_row = 0
     last_error = ""
     try:
+        if config.nurse.similar_cases and todo:   # embeds complaints once (cached in the run folder)
+            similar = _similar_index(run_dir, config, plan, cases, models)
         for case_id in todo:
             if stop.is_set():
                 raise Stopped()
@@ -383,8 +390,16 @@ def execute(run_dir: Path, stop: threading.Event | None = None,
             try:
                 for attempt, wait in enumerate((*CASE_RETRY_WAITS, None)):
                     try:
+                        extra, shown = None, None
+                        if similar is not None:
+                            sc = config.nurse.similar_cases
+                            examples = similar.retrieve(cases[case_id], sc.k, sc.candidates_per_example)
+                            from .similar import render_examples
+                            extra, shown = {"similar_cases": render_examples(examples)}, [c["case_id"] for c in examples]
                         result = run_case(cases[case_id], config, models, emit=emit, should_stop=stop.is_set,
-                                          embed=embed)
+                                          embed=embed, extra=extra)
+                        if shown is not None:
+                            result["similar_case_ids"] = shown
                         break
                     except ModelError as exc:     # Ollama busy, restarting or briefly unreachable
                         if wait is None:
@@ -430,6 +445,22 @@ def execute(run_dir: Path, stop: threading.Event | None = None,
     finally:
         beating.set()
         events.close()
+
+
+def _similar_index(run_dir: Path, config: ExperimentConfig, plan: dict, cases: dict, models: dict):
+    """The retrieval index for the similar-cases ablation, from the run's fixed pool."""
+    from .similar import SimilarCases
+    info = json.loads((run_dir / "pool.json").read_text())
+    pool = [cases[c] for c in info["case_ids"]]
+    queries = [cases[c] for c in plan["case_ids"]]
+    assert not set(info["case_ids"]) & set(plan["case_ids"]), "a sampled case is in the example pool"
+    sc = config.nurse.similar_cases
+    if config.nurse.model.source == "demo":
+        embed = demo_embed
+    else:
+        client = OllamaClient(ollama_url(config))
+        embed = lambda texts: client.embed(sc.embedding_model, texts, num_ctx=2048)  # noqa: E731
+    return SimilarCases(pool, queries, embed, cache=run_dir / "pool_embeddings.json")
 
 
 class RunBusy(RuntimeError):

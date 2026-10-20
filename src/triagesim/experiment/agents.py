@@ -19,13 +19,18 @@ Embedder = Callable[[list[str]], list[list[float]]]
 class Usage:
     calls: int = 0
     prompt_tokens: int = 0
+    max_prompt_tokens: int = 0       # largest single prompt
+    context_full: int = 0            # calls that filled the context window (prompt likely cut off)
     completion_tokens: int = 0
     seconds: float = 0.0
     format_retries: int = 0
     format_failures: int = 0
 
-    def add(self, r: ChatResult) -> None:
+    def add(self, r: ChatResult, num_ctx: int | None = None) -> None:
         self.calls += 1
+        self.max_prompt_tokens = max(self.max_prompt_tokens, r.prompt_tokens)
+        if num_ctx and r.prompt_tokens + r.completion_tokens >= 0.97 * num_ctx:
+            self.context_full += 1
         self.prompt_tokens += r.prompt_tokens
         self.completion_tokens += r.completion_tokens
         self.seconds += r.seconds
@@ -46,8 +51,8 @@ def ask_structured(model: ChatModel, settings: ModelSettings, messages: list[Mes
     Returns (parsed or None if it failed twice, raw text of the last reply).
     """
     result = model.chat(messages, temperature=settings.temperature, seed=settings.seed, json_schema=schema,
-                        max_tokens=settings.max_tokens)
-    usage.add(result)
+                        max_tokens=settings.max_tokens, num_ctx=settings.num_ctx)
+    usage.add(result, settings.num_ctx)
     try:
         return parse(result.content), result.content
     except ProtocolError as exc:
@@ -55,8 +60,8 @@ def ask_structured(model: ChatModel, settings: ModelSettings, messages: list[Mes
         retry = messages + [Message("assistant", result.content),
                             Message("user", f"That reply was not valid ({exc}). Reply again in the required JSON format.")]
         result = model.chat(retry, temperature=settings.temperature, seed=settings.seed, json_schema=schema,
-                            max_tokens=settings.max_tokens)
-        usage.add(result)
+                            max_tokens=settings.max_tokens, num_ctx=settings.num_ctx)
+        usage.add(result, settings.num_ctx)
         try:
             return parse(result.content), result.content
         except ProtocolError:
@@ -75,8 +80,8 @@ class LLMPatient:
     def reply(self, nurse_message: str) -> str:
         self.history.append(Message("user", nurse_message))
         r = self.model.chat(self.history, temperature=self.config.model.temperature, seed=self.config.model.seed,
-                            max_tokens=self.config.model.max_tokens)
-        self.usage.add(r)
+                            max_tokens=self.config.model.max_tokens, num_ctx=self.config.model.num_ctx)
+        self.usage.add(r, self.config.model.num_ctx)
         self.history.append(Message("assistant", r.content))
         return r.content
 
@@ -141,8 +146,9 @@ class RetrievalPatient:
         self.last_retrieved = [self.chunks[i] for i in ranked[: self.config.retrieval_top_k]]
         prompt = RETRIEVAL_PROMPT.format(facts="\n".join(self.last_retrieved), question=nurse_message)
         r = self.model.chat([Message("user", prompt)], temperature=self.config.model.temperature,
-                            seed=self.config.model.seed, max_tokens=self.config.model.max_tokens)
-        self.usage.add(r)
+                            seed=self.config.model.seed, max_tokens=self.config.model.max_tokens,
+                            num_ctx=self.config.model.num_ctx)
+        self.usage.add(r, self.config.model.num_ctx)
         return r.content
 
 

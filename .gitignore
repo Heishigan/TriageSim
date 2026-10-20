@@ -22,3 +22,4 @@ venv/
 .DS_Store
 logs/*
 !logs/.gitkeep
+_to_delete/

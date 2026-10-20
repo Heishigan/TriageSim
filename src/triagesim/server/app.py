@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import threading
 from pathlib import Path
@@ -415,6 +416,85 @@ def list_cases(name: str, limit: int = 20, offset: int = 0) -> dict:
     return {"total": len(cases), "cases": cases[offset: offset + limit]}
 
 
+def _find_case(name: str, case_id: str) -> dict:
+    for c in load_cases(_cohort_dir(name)):
+        if c["case_id"] == case_id:
+            return c
+    raise HTTPException(404, f"No case {case_id} in cohort {name}")
+
+
+def _records(df: pd.DataFrame) -> list[dict]:
+    return json.loads(df.to_json(orient="records", date_format="iso"))
+
+
+@app.get("/api/cohorts/{name}/cases/{case_id}")
+def case_ground_truth(name: str, case_id: str) -> dict:
+    """One case file plus the MIMIC-IV rows it was built from (ED stay, triage, ED diagnoses)."""
+    case = _find_case(name, case_id)
+    tables = _cached_tables(("cohort",))
+    sid = case["stay_id"]
+    pick = lambda t: tables[t].loc[tables[t]["stay_id"] == sid] if t in tables else pd.DataFrame()  # noqa: E731
+    diagnoses = pick("ed_diagnosis")
+    if len(diagnoses):
+        diagnoses = diagnoses.sort_values("seq_num")
+    return {"case": case, "mimic": {"ed_stay": _records(pick("edstays")), "triage": _records(pick("triage")),
+                                    "ed_diagnoses": _records(diagnoses)}}
+
+
+_MODE_ORDER = {"chart_review": 0, "multiple_choice": 1, "interview": 2}
+
+
+@app.get("/api/cohorts/{name}/cases/{case_id}/runs")
+def case_across_runs(name: str, case_id: str) -> list[dict]:
+    """This case in every run made from this cohort: decision, scores and transcript, for review
+    side by side. Runs without a result for the case yet are left out."""
+    _cohort_dir(name)
+    out = []
+    for d in list_runs():
+        if _run_cohort(d) != name:
+            continue
+        result = next((r for r in read_results(d) if r["case_id"] == case_id), None)
+        if result is None:
+            continue
+        cfg = yaml.safe_load((d / "experiment.yaml").read_text(encoding="utf-8")) or {}
+        out.append({"run": d.name, "experiment": cfg.get("name"), "type": _run_type(cfg),
+                    "mode": (cfg.get("nurse") or {}).get("mode"), "models": _run_models(cfg), **_row(result),
+                    "transcript": result.get("transcript") or [],
+                    "feedback": (result.get("evaluation") or {}).get("feedback")})
+    # Chart review, multiple choice, interview, then varied personas; within a pipeline, oldest run
+    # first (so an ablation made later follows the run it ablates).
+    out.sort(key=lambda r: (_MODE_ORDER.get(r["mode"], 9), "random" in r["type"], r["run"].rsplit("_", 1)[-1]))
+    return out
+
+
+_note_cache: dict[int, str | None] = {}
+
+
+@app.get("/api/cohorts/{name}/cases/{case_id}/note")
+def case_original_note(name: str, case_id: str) -> dict:
+    """The original discharge-note sections the case was built from, before redaction (slow the
+    first time: the note file is read in full). Patient-level text: shown on this computer only."""
+    from ..cases.notes import redact_hpi, split_sections
+    case = _find_case(name, case_id)
+    hadm = case.get("hadm_id")
+    if hadm is None:
+        return {"found": False, "reason": "This ED stay has no hospital admission, so no discharge note."}
+    if hadm not in _note_cache:
+        path = paths.data_dir() / "note/discharge.csv.gz"
+        if not path.is_file():
+            raise HTTPException(400, "note/discharge.csv.gz is not in the data folder.")
+        _note_cache[hadm] = read_discharge_notes(path, {hadm}).get(hadm)
+    text = _note_cache[hadm]
+    if text is None:
+        return {"found": False, "reason": "No discharge note for this admission."}
+    sections = split_sections(text)
+    hpi = sections.get("hpi", "")
+    red = redact_hpi(hpi)
+    return {"found": True, "hpi_original": hpi, "hpi_given_to_patient": case["patient_view"].get("hpi", ""),
+            "removed": red.removed, "ed_course_cut": red.ed_course_cut,
+            "sections": {k: v for k, v in sections.items() if k != "hpi"}}
+
+
 @app.get("/api/cohorts/{name}/review")
 def review_sample(name: str, group: str = "included", n: int = 10, seed: int = 1) -> dict:
     d = _cohort_dir(name)
@@ -631,6 +711,8 @@ def start_run(body: dict) -> dict:
     needed = sorted({m.name for m in config.models() if m.source == "ollama"})
     if config.patient and config.patient.mode == "retrieval" and config.patient.model.source == "ollama":
         needed.append(config.patient.retrieval_embedding_model)
+    if config.nurse.similar_cases and config.nurse.model.source == "ollama":
+        needed.append(config.nurse.similar_cases.embedding_model)
     if needed:
         try:
             installed = {m["name"] for m in _ollama(quick=True).list_models()}
@@ -692,7 +774,8 @@ def _run_models(cfg: dict) -> dict:
 
 def _run_cohort(run_dir: Path) -> str | None:
     plan = _read_json(run_dir / "plan.json") or {}
-    return Path(plan["cohort_dir"]).name if plan.get("cohort_dir") else None
+    # The run may come from another computer (e.g. a Linux cluster), so split on both separators.
+    return re.split(r"[\\/]", str(plan["cohort_dir"]).rstrip("/\\"))[-1] if plan.get("cohort_dir") else None
 
 
 def _run_is_active(name: str, status: dict) -> bool:

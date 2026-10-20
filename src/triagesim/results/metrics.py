@@ -93,6 +93,7 @@ def run_metrics(results: list[dict]) -> dict:
         "undecided": len(results) - n,
         "forced_decisions": sum(bool(r.get("forced")) for r in results),
         "format_failures": sum(r.get("format_failures", 0) for r in results),
+        "context_full_cases": sum(1 for r in results if r.get("context_full")),
         "agreement": wilson(len(agree), n),
         "within_one_level": wilson(len(within1), n),
         "under_triage": wilson(len(under), n),

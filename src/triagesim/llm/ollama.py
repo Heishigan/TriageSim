@@ -43,9 +43,11 @@ class OllamaClient:
 
     # ---- chat --------------------------------------------------------------------
     def chat(self, model: str, messages: list[Message], *, temperature: float | None = None,
-             seed: int | None = None, json_schema: dict | None = None, max_tokens: int | None = None) -> ChatResult:
+             seed: int | None = None, json_schema: dict | None = None, max_tokens: int | None = None,
+             num_ctx: int | None = None) -> ChatResult:
         payload: dict[str, Any] = {"model": model, "messages": [m.as_dict() for m in messages], "stream": False}
-        options = {k: v for k, v in {"temperature": temperature, "seed": seed, "num_predict": max_tokens}.items()
+        options = {k: v for k, v in {"temperature": temperature, "seed": seed, "num_predict": max_tokens,
+                                     "num_ctx": num_ctx}.items()
                    if v is not None}
         if options:
             payload["options"] = options
@@ -66,8 +68,13 @@ class OllamaClient:
         if r.status_code != 200:
             raise ModelError(f"Could not delete {name}: {r.text[:200]}")
 
-    def embed(self, model: str, texts: list[str]) -> list[list[float]]:
-        return self._post("/api/embed", {"model": model, "input": texts}).get("embeddings", [])
+    def embed(self, model: str, texts: list[str], num_ctx: int | None = None) -> list[list[float]]:
+        """Embeddings for short texts. ``num_ctx`` overrides OLLAMA_CONTEXT_LENGTH for this model:
+        a context larger than an embedding model supports can stop its worker."""
+        payload: dict[str, Any] = {"model": model, "input": texts, "truncate": True}
+        if num_ctx:
+            payload["options"] = {"num_ctx": num_ctx}
+        return self._post("/api/embed", payload).get("embeddings", [])
 
     # ---- downloads ---------------------------------------------------------------
     def pull(self, name: str, progress: Progress | None = None) -> None:
@@ -211,9 +218,10 @@ class OllamaModel:
     def __init__(self, client: OllamaClient, name: str):
         self.client, self.name = client, name
 
-    def chat(self, messages, *, temperature=None, seed=None, json_schema=None, max_tokens=None) -> ChatResult:
+    def chat(self, messages, *, temperature=None, seed=None, json_schema=None, max_tokens=None,
+             num_ctx=None) -> ChatResult:
         return self.client.chat(self.name, messages, temperature=temperature, seed=seed, json_schema=json_schema,
-                                max_tokens=max_tokens)
+                                max_tokens=max_tokens, num_ctx=num_ctx)
 
 
 def download_from_huggingface(repo: str, filename: str, token: str | None, cache_dir: Path,

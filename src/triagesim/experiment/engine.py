@@ -39,13 +39,13 @@ class CaseState(TypedDict, total=False):
 
 def run_case(case: dict, config: ExperimentConfig, models: dict[str, ChatModel], *,
              emit: Emit = lambda e: None, should_stop: Callable[[], bool] = lambda: False,
-             embed=None) -> dict:
-    """Run one case and return its result record."""
+             embed=None, extra: dict[str, str] | None = None) -> dict:
+    """Run one case and return its result record. ``extra`` adds prompt fields (similar cases)."""
     started = time.time()
     usage = {"nurse": Usage(), "patient": Usage(), "evaluator": Usage()}
     persona_name = choose_persona(config.patient, case["case_id"], config.sampling.seed) if config.patient else None
     persona_text = config.patient.personas.get(persona_name, "") if config.patient else ""
-    values = case_values(case, persona=persona_text)
+    values = case_values(case, persona=persona_text, extra=extra)
     nurse_cfg = config.nurse
     nurse_model = models[nurse_cfg.model.name]
 
@@ -186,6 +186,8 @@ def run_case(case: dict, config: ExperimentConfig, models: dict[str, ChatModel],
         "format_failures": sum(u.format_failures for u in usage.values()),
         "tokens": sum(u.prompt_tokens + u.completion_tokens for u in usage.values()),
         "model_calls": sum(u.calls for u in usage.values()),
+        "max_prompt_tokens": {k: u.max_prompt_tokens for k, u in usage.items() if u.calls},
+        "context_full": sum(u.context_full for u in usage.values()),
         "seconds": round(time.time() - started, 2),
         "transcript": state.get("transcript", []),
     }

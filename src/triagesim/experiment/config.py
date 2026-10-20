@@ -24,6 +24,10 @@ class ModelSettings(Strict):
     max_tokens: int | None = Field(
         8192, ge=64, description="Most tokens one reply may have, reasoning included. Stops a model that "
         "keeps writing; a cut-off reply counts as a format failure. Empty = no limit")
+    num_ctx: int | None = Field(
+        None, ge=512, description="Context window in tokens (prompt + reply). Empty = Ollama's default, which "
+        "depends on the GPU (32,768 on the cluster's L40S, often 2,048-4,096 on a PC); a prompt longer than the "
+        "window is cut off silently, so set it for long prompts")
 
     @model_validator(mode="after")
     def _local_only(self):
@@ -50,6 +54,8 @@ class Agent(Strict):
         if unknown:
             raise ValueError(f"Unknown field(s) in 'sees': {sorted(unknown)}")
         used = template_fields(self.system_prompt)
+        if "similar_cases" in self.sees and type(self).__name__ != "Nurse":
+            raise ValueError("Only the nurse can see similar cases.")
         hidden = used - set(self.sees)
         if hidden:
             raise ValueError(f"The prompt uses {sorted(hidden)} but the agent may not see them. "
@@ -74,15 +80,27 @@ class Patient(Agent):
         return self
 
 
+class SimilarCaseSettings(Strict):
+    """Retrieved similar past patients for the nurse (Lee et al. 2025, KATE)."""
+    k: int = Field(40, ge=1, le=200, description="Examples shown per patient")
+    candidates_per_example: int = Field(3, ge=1, description="Stage 1 keeps k x this by complaint similarity")
+    embedding_model: str = "nomic-embed-text"
+
+
 class Nurse(Agent):
     mode: Literal["interview", "chart_review", "multiple_choice"] = "interview"
     opening_message: str = "Hello, I'm the triage nurse. What brings you in today?"
     max_turns: int = Field(12, ge=1, le=50)
+    similar_cases: SimilarCaseSettings | None = None
 
     @model_validator(mode="after")
     def _no_answers(self):
         if REFERENCE_FIELDS & set(self.sees):
             raise ValueError("The nurse may not see reference answers.")
+        if ("similar_cases" in self.sees) != (self.similar_cases is not None):
+            raise ValueError("'similar_cases' in 'sees' and the similar_cases settings go together.")
+        if self.similar_cases is not None and self.mode != "chart_review":
+            raise ValueError("Similar cases are only available for chart review.")
         return self
 
 

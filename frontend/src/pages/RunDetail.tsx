@@ -3,13 +3,13 @@ import { Link, useParams } from "react-router-dom";
 import { type Metrics, type RunEvent, type RunStatus, api, post, useApi } from "../api";
 import { Alert, Badge, Button, Card, Field, Page, Progress, Spinner, Stat, StateBadge, Table, ci, inputClass, pct } from "../components/ui";
 
-type Detail = { name: string; status: RunStatus; config: { name: string; description: string; nurse: { mode: string; model: { name: string } };
+type Detail = { name: string; status: RunStatus; plan?: { cohort_dir?: string } | null; config: { name: string; description: string; nurse: { mode: string; model: { name: string } };
   patient?: { model: { name: string }; persona: string; mode: string }; evaluator?: { enabled: boolean } } };
 type Row = { case_id: string; persona: string | null; reference_esi: number; esi: number | null;
   head_injury: boolean | null; decided: boolean; forced: boolean; questions: number; seconds: number;
   scores: Record<string, number> | null };
 type Results = { metrics: Metrics; cases: Row[] };
-type Message = { speaker: string; text: string; turn: number; decision?: number; kind?: string; retrieved?: string[] };
+export type Message = { speaker: string; text: string; turn: number; decision?: number; kind?: string; retrieved?: string[] };
 
 export default function RunDetail() {
   const { name = "" } = useParams();
@@ -50,7 +50,7 @@ export default function RunDetail() {
             {{ live: "Live", cases: "Cases", results: "Results" }[t]}</button>))}
       </div>
       {tab === "live" && <Live name={name} />}
-      {tab === "cases" && <Cases name={name} />}
+      {tab === "cases" && <Cases name={name} cohort={detail.data?.plan?.cohort_dir?.split(/[\\/]/).pop() ?? null} />}
       {tab === "results" && <ResultsView name={name} />}
     </Page>
   );
@@ -104,12 +104,12 @@ function Live({ name }: { name: string }) {
   );
 }
 
-function EsiPair({ got, reference }: { got?: number | null; reference?: number | null }) {
+export function EsiPair({ got, reference }: { got?: number | null; reference?: number | null }) {
   const color = got == null ? "gray" : got === reference ? "green" : got > (reference ?? 0) ? "red" : "amber";
   return <Badge color={color}>ESI {got ?? "–"} / ref {reference ?? "–"}</Badge>;
 }
 
-function Conversation({ messages }: { messages: Message[] }) {
+export function Conversation({ messages }: { messages: Message[] }) {
   return (
     <div className="space-y-3">
       {messages.map((m, i) => m.speaker === "system" ? (
@@ -129,29 +129,51 @@ function Conversation({ messages }: { messages: Message[] }) {
 }
 
 /* ---- cases ------------------------------------------------------------------------- */
-function Cases({ name }: { name: string }) {
+function Cases({ name, cohort }: { name: string; cohort: string | null }) {
   const { data, error } = useApi<Results>(`/runs/${name}/results`, 5000);
   const [open, setOpen] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [detail, setDetail] = useState<{ transcript: Message[]; evaluation: { feedback: string } | null } | null>(null);
-  useEffect(() => { if (open) api<typeof detail>(`/runs/${name}/cases/${open}`).then(setDetail); }, [open, name]);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const top = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    setDetail(null); setDetailError(null);
+    api<typeof detail>(`/runs/${name}/cases/${open}`).then(setDetail).catch((e) => setDetailError((e as Error).message));
+    top.current?.scrollIntoView({ behavior: "smooth", block: "start" });   // the transcript opens above the list
+  }, [open, name]);
+  const q = query.trim().toLowerCase();
+  const rows = (data?.cases ?? []).filter((r) => !q || r.case_id.toLowerCase().includes(q));
+  const close = () => { setOpen(null); setDetail(null); setDetailError(null); };
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" ref={top}>
       {error && <Alert kind="error">Could not load the cases: {error}</Alert>}
-      <Card>
+      {open && (
+        <Card title={`Transcript · ${open}`} actions={<>
+          {cohort && <Link to={`/cohorts/${cohort}/cases/${open}`}><Button variant="primary">Review case across runs</Button></Link>}
+          <Button variant="ghost" onClick={close}>Close</Button></>}>
+          {detailError ? <Alert kind="error">Could not load this transcript: {detailError}</Alert>
+            : !detail ? <Spinner />
+            : <>
+                <Conversation messages={detail.transcript} />
+                {detail.evaluation && <div className="mt-4"><Alert>Evaluator: {detail.evaluation.feedback}</Alert></div>}
+              </>}
+        </Card>)}
+      <Card title={`Cases (${rows.length}${q ? ` of ${data?.cases.length ?? 0}` : ""})`}
+        actions={<input className={`${inputClass} w-56`} placeholder="Find a case, e.g. case-01276"
+          value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Find a case" />}>
         <Table head={["Case", "Persona", "Nurse ESI", "Agent ESI", "Head injury", "Questions", "Scores", ""]}
-          rows={(data?.cases ?? []).map((r) => [
+          rows={rows.map((r) => [
             <span className="font-mono text-xs">{r.case_id}</span>, r.persona ?? "–", r.reference_esi,
             <span><EsiPair got={r.esi} reference={r.reference_esi} />{r.forced && <Badge color="amber">forced</Badge>}</span>,
             r.head_injury === null ? "–" : r.head_injury ? "yes" : "no", r.questions,
             r.scores ? Object.values(r.scores).join(" / ") : "–",
-            <Button variant="ghost" onClick={() => setOpen(r.case_id)}>Transcript</Button>])}
-          empty="No finished cases yet." />
+            <span className="flex gap-1">
+              <Button variant={open === r.case_id ? "primary" : "ghost"} onClick={() => setOpen(r.case_id)}>Transcript</Button>
+              {cohort && <Link to={`/cohorts/${cohort}/cases/${r.case_id}`}><Button variant="ghost">Review</Button></Link>}
+            </span>])}
+          empty={q ? "No case matches." : "No finished cases yet."} />
       </Card>
-      {open && detail && (
-        <Card title={`Transcript · ${open}`} actions={<Button variant="ghost" onClick={() => { setOpen(null); setDetail(null); }}>Close</Button>}>
-          <Conversation messages={detail.transcript} />
-          {detail.evaluation && <div className="mt-4"><Alert>Evaluator: {detail.evaluation.feedback}</Alert></div>}
-        </Card>)}
     </div>
   );
 }

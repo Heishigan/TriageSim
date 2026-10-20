@@ -30,7 +30,8 @@ class DemoModel:
     def __init__(self, name: str = "demo"):
         self.name = name
 
-    def chat(self, messages: list[Message], *, temperature=None, seed=None, json_schema=None, max_tokens=None) -> ChatResult:
+    def chat(self, messages: list[Message], *, temperature=None, seed=None, json_schema=None, max_tokens=None,
+             num_ctx=None) -> ChatResult:
         rng = random.Random(hashlib.sha256(messages[0].content.encode()).hexdigest())
         props = (json_schema or {}).get("properties", {})
         if "action" in props:                                   # nurse turn

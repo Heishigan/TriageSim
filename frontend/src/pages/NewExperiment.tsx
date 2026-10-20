@@ -155,7 +155,7 @@ export default function NewExperiment() {
         </ConfirmDialog>)}
 
       {!models.length && !demoMode && <Alert kind="warning">No models are downloaded yet. Download at least one under <a className="font-medium underline" href="/models">Models</a>, then come back.</Alert>}
-      <AgentCard title="Nurse agent" path="nurse" agent={config.nurse} set={set} fields={fields} models={models} demoMode={demoMode} exclude={["persona", "esi", "disposition", "head_injury", "transcript", "decision"]}>
+      <AgentCard title="Nurse agent" path="nurse" agent={config.nurse} set={set} fields={fields} models={models} demoMode={demoMode} exclude={["persona", "esi", "disposition", "head_injury", "transcript", "decision", "similar_cases"]}>
         <div className="grid gap-4 md:grid-cols-3">
           <Field label="Mode" hint={ESI_HELP[config.nurse.mode]}>
             <select className={inputClass} value={config.nurse.mode} onChange={(e) => {
@@ -171,7 +171,7 @@ export default function NewExperiment() {
       </AgentCard>
 
       {interview && config.patient && (
-        <AgentCard title="Patient agent" path="patient" agent={config.patient} set={set} fields={fields} models={models} demoMode={demoMode} exclude={["esi", "disposition", "head_injury", "transcript", "decision", "vitals", "arrival_transport"]}>
+        <AgentCard title="Patient agent" path="patient" agent={config.patient} set={set} fields={fields} models={models} demoMode={demoMode} exclude={["esi", "disposition", "head_injury", "transcript", "decision", "vitals", "arrival_transport", "similar_cases"]}>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="How the patient answers" hint={config.patient.mode === "retrieval" ? "Only from passages of the record retrieved for each question (embedding model below)." : "In character, from what the patient knows."}>
               <select className={inputClass} value={config.patient.mode} onChange={(e) => set("patient.mode", e.target.value)}>
@@ -193,7 +193,7 @@ export default function NewExperiment() {
         </AgentCard>)}
 
       {config.evaluator && (
-        <AgentCard title="Evaluator agent" path="evaluator" agent={config.evaluator} set={set} fields={fields} models={models} demoMode={demoMode} exclude={["persona"]}
+        <AgentCard title="Evaluator agent" path="evaluator" agent={config.evaluator} set={set} fields={fields} models={models} demoMode={demoMode} exclude={["persona", "similar_cases"]}
           toggle={<label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={config.evaluator.enabled} onChange={(e) => set("evaluator.enabled", e.target.checked)} />enabled</label>}>
           <p className="text-sm text-slate-500">Reads the transcript and the reference answers after each case and scores the nurse (0–10) on history taking, risk identification and decision.</p>
         </AgentCard>)}

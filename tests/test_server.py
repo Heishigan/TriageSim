@@ -334,3 +334,41 @@ def test_sample_preview_before_starting(api):
     plan = api.get(f"/api/runs/{run}").json()["plan"]
     assert plan["sample"]["sample_id"] == preview["sample_id"]       # the run got exactly the previewed cases
     assert api.post("/api/experiments/preview", json=config | {"cohort": "nope"}).status_code == 400
+
+
+def test_case_ground_truth_and_original_note(api):
+    name = cohort_with_cases(api)
+    case = api.get(f"/api/cohorts/{name}/cases?limit=1").json()["cases"][0]
+    r = api.get(f"/api/cohorts/{name}/cases/{case['case_id']}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["case"]["case_id"] == case["case_id"]
+    assert body["mimic"]["triage"] and body["mimic"]["triage"][0]["stay_id"] == case["stay_id"]
+    assert body["mimic"]["ed_stay"][0]["stay_id"] == case["stay_id"]
+    note = api.get(f"/api/cohorts/{name}/cases/{case['case_id']}/note").json()
+    if case.get("hadm_id") is None:
+        assert note["found"] is False
+    else:
+        assert note["found"] and note["hpi_given_to_patient"] == case["patient_view"]["hpi"]
+        assert len(note["hpi_original"]) >= len(note["hpi_given_to_patient"])
+    assert api.get(f"/api/cohorts/{name}/cases/case-99999").status_code == 404
+
+
+def test_case_across_runs_lists_every_run_of_the_cohort(api):
+    name = cohort_with_cases(api)
+    preset = next(p for p in api.get("/api/experiment-presets").json() if p["name"] == "chart_review")
+    run = api.post("/api/runs", json=demo(preset["config"]) | {"cohort": name}).json()["name"]
+    wait_job(api, run)
+    case_id = api.get(f"/api/runs/{run}/results").json()["cases"][0]["case_id"]
+    rows = api.get(f"/api/cohorts/{name}/cases/{case_id}/runs").json()
+    assert [r["run"] for r in rows] == [run]
+    assert rows[0]["case_id"] == case_id and rows[0]["transcript"] and rows[0]["type"] == "Chart review"
+    assert api.get(f"/api/cohorts/{name}/cases/case-99999/runs").json() == []
+
+
+def test_run_cohort_name_from_another_computer(tmp_path):
+    import json as _json
+    from triagesim.server.app import _run_cohort
+    for path in ("/a/home/u/TriageSim/outputs/cohorts/elderly_falls_1", "C:\\\\x\\\\outputs\\\\cohorts\\\\elderly_falls_1"):
+        (tmp_path / "plan.json").write_text(_json.dumps({"cohort_dir": path}))
+        assert _run_cohort(tmp_path) == "elderly_falls_1"

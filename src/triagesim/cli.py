@@ -100,6 +100,14 @@ def _pull_models(args) -> int:
             print(f"{model.name}:")
             result = ensure_model(client, model, os.environ.get("HF_TOKEN"), paths.output_dir() / "models", show)
             print(f"  {result:<60}")
+        sc = config.nurse.similar_cases
+        if sc and config.nurse.model.source == "ollama":     # embedding model for the similar cases
+            print(f"{sc.embedding_model}:")
+            if client.has_model(sc.embedding_model):
+                print("  already installed")
+            else:
+                client.pull(sc.embedding_model, show)
+                print(f"  {'downloaded from the Ollama library':<60}")
     except ModelError as exc:
         print(f"\nError: {exc}", file=sys.stderr)
         return 1
@@ -110,7 +118,7 @@ def _run(args) -> int:
     import signal
     import threading
     from .experiment.config import ExperimentConfig
-    from .experiment.runner import RunBusy, create_run, execute, read_status
+    from .experiment.runner import RunBusy, create_run, execute, read_results, read_status
     if args.resume:
         run_dir = Path(args.resume)
     else:
@@ -143,6 +151,10 @@ def _run(args) -> int:
         stop.set()
         status = read_status(run_dir)
     print(f"State: {status.get('state')} ({status.get('done')}/{status.get('total')} cases)")
+    full = sum(1 for r in read_results(run_dir) if r.get("context_full"))
+    if full:
+        print(f"WARNING: {full} case(s) filled the context window; their prompts were probably cut off. "
+              "Set num_ctx for the model and run them again.", file=sys.stderr)
     if status.get("error"):
         print(status["error"], file=sys.stderr)
     return 0 if status.get("state") == "completed" else 1

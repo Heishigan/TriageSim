@@ -32,6 +32,7 @@ class ChatModel(Protocol):
 
     def chat(self, messages: list[Message], *, temperature: float | None = None,
              seed: int | None = None, json_schema: dict[str, Any] | None = None,
-             max_tokens: int | None = None) -> ChatResult:
-        """Return the model's reply. With ``json_schema`` the reply must be JSON matching it."""
+             max_tokens: int | None = None, num_ctx: int | None = None) -> ChatResult:
+        """Return the model's reply. With ``json_schema`` the reply must be JSON matching it.
+        ``num_ctx`` sets the context window (prompt + reply); None = the server's default."""
         ...

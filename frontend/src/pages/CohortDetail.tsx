@@ -105,7 +105,7 @@ function Overview({ d }: { d: Detail }) {
   );
 }
 
-function View({ title, data }: { title: string; data: Record<string, unknown> }) {
+export function View({ title, data }: { title: string; data: Record<string, unknown> }) {
   return (
     <div className="rounded-lg border border-slate-200 p-3">
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</div>

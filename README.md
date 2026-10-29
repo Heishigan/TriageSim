@@ -1,5 +1,8 @@
 # TriageSim
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23777546.svg)](https://doi.org/10.5281/zenodo.23777546)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 An open-source testbed for evaluating how language models triage emergency department
 patients, built on MIMIC-IV. Build a cohort, turn it into cases, configure agents
 (nurse, patient, evaluator) and their models, watch the conversations live, and read

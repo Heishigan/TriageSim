@@ -7,7 +7,7 @@ tiers:
   laptop: "Laptop or CPU (up to 8 GB)"
   gpu16: "GPU with 12-16 GB"
   gpu24: "GPU with 24 GB"
-  gpu48: "GPU with 48 GB or more (cluster)"
+  gpu48: "GPU with 48 GB or more (workstation or server)"
   embedding: "Embedding models (retrieval patient)"
 models:
   # ---- laptop -----------------------------------------------------------------------

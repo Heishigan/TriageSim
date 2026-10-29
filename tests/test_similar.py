@@ -56,7 +56,7 @@ def test_embeddings_are_cached_for_resume(tmp_path):
 
 
 def test_config_rules():
-    data = ExperimentConfig.from_yaml(ROOT / "configs/experiments/main/main_similar_qwen38.yaml").model_dump()
+    data = ExperimentConfig.from_yaml(ROOT / "paper/configs/main_similar_qwen38.yaml").model_dump()
     bad = json.loads(json.dumps(data)); bad["nurse"]["similar_cases"] = None
     with pytest.raises(ValueError):
         ExperimentConfig.model_validate(bad)
@@ -66,9 +66,9 @@ def test_config_rules():
 
 
 def test_similar_ablation_differs_from_chart_review_only_by_the_examples():
-    chart = ExperimentConfig.from_yaml(ROOT / "configs/experiments/main/main_chart_qwen38.yaml")
+    chart = ExperimentConfig.from_yaml(ROOT / "paper/configs/main_chart_qwen38.yaml")
     for name, cases, seed in (("main_similar_qwen38", 1000, 42), ("pilot_similar_qwen38", 20, 7)):
-        sim = ExperimentConfig.from_yaml(ROOT / f"configs/experiments/main/{name}.yaml")
+        sim = ExperimentConfig.from_yaml(ROOT / f"paper/configs/{name}.yaml")
         added = [l for l in sim.nurse.system_prompt.split("\n") if l not in chart.nurse.system_prompt.split("\n")]
         assert len(added) == 2 and added[0].startswith("Similar earlier patients") and added[1] == "{similar_cases}"
         assert sim.nurse.sees == chart.nurse.sees + ["similar_cases"]

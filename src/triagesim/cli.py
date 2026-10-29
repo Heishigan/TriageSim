@@ -205,7 +205,7 @@ def _ui(args) -> int:
     local = host in ("127.0.0.1", "localhost", "::1")
     if not local and not os.environ.get("TRIAGESIM_ACCESS_TOKEN"):
         print("Refusing to listen on the network without an access token: "
-              "set TRIAGESIM_ACCESS_TOKEN (see cluster/ui.sbatch).")
+              "set TRIAGESIM_ACCESS_TOKEN to a secret value and open the app with ?token=<value>.")
         return 2
     port = args.port or _free_port(host="127.0.0.1" if local else host)
     url = f"http://{'127.0.0.1' if host in ('0.0.0.0', 'localhost') else host}:{port}"

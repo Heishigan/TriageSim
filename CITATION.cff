@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use TriageSim, please cite it as below."
+title: "TriageSim: a testbed for evaluating LLM emergency triage on MIMIC-IV"
+type: software
+authors:
+  - family-names: Pathmaraj
+    given-names: Heishigan
+    affiliation: "Department of Computer and Systems Sciences (DSV), Stockholm University"
+version: 1.0.0
+date-released: 2026-10-29
+license: MIT
+repository-code: "https://github.com/Heishigan/TriageSim"
+keywords:
+  - emergency triage
+  - large language models
+  - multi-agent simulation
+  - MIMIC-IV
